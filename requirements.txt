@@ -1,0 +1,9 @@
+﻿PyMuPDF
+numpy
+Pillow
+scipy
+shapely
+opencv-python
+ezdxf
+pytest
+ruff

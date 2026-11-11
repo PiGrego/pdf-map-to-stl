@@ -1,0 +1,17 @@
+{
+  "page": 0,
+  "final_width_mm": 120.0,
+  "curve_error_mm": 0.005,
+  "vertex_filter_mm": 0.001,
+  "raster_validation_dpi": 1200,
+  "uncertainty_threshold": 0.85,
+  "merge_isom_402_into_yellow": true,
+  "merge_isom_404_into_yellow": true,
+  "export_forest_white": true,
+  "export_road_base": false,
+  "thin_feature_gap_mm": 0.08,
+  "target_iou_large_areas": 0.97,
+  "target_area_error_percent": 1.5,
+  "target_mean_border_error_mm": 0.03,
+  "target_p95_border_error_mm": 0.10
+}

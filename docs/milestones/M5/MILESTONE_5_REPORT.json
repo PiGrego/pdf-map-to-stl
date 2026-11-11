@@ -1,0 +1,53 @@
+{
+  "milestone": "M5 topology gate",
+  "decision": "generic morphological closing rejected; open regions are not promoted to yellow",
+  "m4": {
+    "accuracy_visible": 0.9218429443057986,
+    "macro_f1": 0.9254367747104317,
+    "print_match": 0.8495088342635874,
+    "yellow": {
+      "precision": 0.9598497890805119,
+      "recall": 0.7091037560431387,
+      "f1": 0.8156405463326161,
+      "iou": 0.6886765194527514,
+      "hd95_mm": 9.806912956406242
+    }
+  },
+  "m5": {
+    "accuracy_visible": 0.9218429443057986,
+    "macro_f1": 0.9254367747104317,
+    "print_match": 0.8495088342635874,
+    "yellow": {
+      "precision": 0.9598497890805119,
+      "recall": 0.7091037560431387,
+      "f1": 0.8156405463326161,
+      "iou": 0.6886765194527514,
+      "hd95_mm": 9.806912956406242
+    }
+  },
+  "experimental_closing": {
+    "0.15_pt": {
+      "accuracy_visible": 0.921481,
+      "yellow_f1": 0.814
+    },
+    "0.30_pt": {
+      "accuracy_visible": 0.921755,
+      "yellow_f1": 0.81523
+    },
+    "baseline_m4": {
+      "accuracy_visible": 0.921843,
+      "yellow_f1": 0.81564
+    }
+  },
+  "production_geometry_changed": false,
+  "reproducibility": {
+    "identical": true,
+    "sha256": "6b1bee11f1370d0e7fb272b77d9ae8e3a815c884995a79f890bc334c333446ed",
+    "files_each": [
+      30,
+      30
+    ]
+  },
+  "tests": "10 passed",
+  "next": "M6: recover missing open regions from source vector paint and clipping history"
+}
