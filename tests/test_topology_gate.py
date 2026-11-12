@@ -1,5 +1,5 @@
 from shapely.geometry import Polygon, box
-from v15_m5.topology_analyzer import enclosed_holes, safe_fill_holes
+from pdf_map_to_stl.topology_analyzer import enclosed_holes, safe_fill_holes
 
 def test_only_true_interior_ring_is_candidate():
     donut=Polygon([(0,0),(10,0),(10,10),(0,10)], [[(2,2),(4,2),(4,4),(2,4)]])
