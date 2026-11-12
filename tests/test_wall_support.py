@@ -1,6 +1,6 @@
 from shapely.geometry import box, LineString
-from v15_m5.stroke_geometry import collect_strokes
-from v15_m5.models import PaintOperation, GraphicsState, VectorPath, PathCommand
+from pdf_map_to_stl.stroke_geometry import collect_strokes
+from pdf_map_to_stl.models import PaintOperation, GraphicsState, VectorPath, PathCommand
 
 def test_raster_support_rejects_unsupported_thin_stroke():
     path=VectorPath('p',[PathCommand('M',[(0,0)]),PathCommand('L',[(10,0)])])

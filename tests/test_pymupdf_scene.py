@@ -1,8 +1,8 @@
 from pathlib import Path
-from v15_m5.pymupdf_scene import PyMuPDFSceneBuilder
+from pdf_map_to_stl.pymupdf_scene import PyMuPDFSceneBuilder
 
 def test_scene_matches_drawings():
-    p=Path('input/sample.pdf')
+    p=Path('samples/sample.pdf')
     if not p.exists():return
     s=PyMuPDFSceneBuilder();ops=s.build(p,0)
     assert len(ops)>90000

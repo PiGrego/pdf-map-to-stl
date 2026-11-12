@@ -32,3 +32,5 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+*.egg-info/

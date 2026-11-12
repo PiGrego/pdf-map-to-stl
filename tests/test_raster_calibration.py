@@ -1,6 +1,6 @@
 import math
 from shapely.geometry import box
-from v15_m5.raster_grid import grid_from_bounds
+from pdf_map_to_stl.raster_grid import grid_from_bounds
 
 BOUNDS=(0.0,0.0,141.89669799804688,104.67208862304688)
 POINTS=[
