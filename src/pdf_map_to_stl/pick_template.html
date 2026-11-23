@@ -18,7 +18,7 @@
   #wrap { position: relative; display: inline-block; cursor: crosshair; user-select: none; }
   #wrap img { display: block; max-width: none; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
   #sel { position: absolute; border: 2px solid var(--sel); background: rgba(208,2,27,.08); display: none; pointer-events: none; }
-  aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; }
+  main { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; }
   h1 { font-size: 17px; margin: 0 0 2px; }
   .sub { color: var(--muted); font-size: 12px; word-break: break-all; margin-bottom: 12px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
@@ -29,19 +29,27 @@
   label { display: block; margin: 6px 0; }
   input[type=number] { width: 90px; font: inherit; padding: 2px 4px; }
   @media (max-width: 760px) { #app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+  .crop { display: grid; grid-template-columns: repeat(2, auto 90px); gap: 6px 8px; align-items: center; justify-content: start; }
+  :focus-visible { outline: 3px solid #1a5fb4; outline-offset: 2px; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="stage"><div id="wrap"><img id="page" alt="map page"><div id="sel"></div></div></div>
-  <aside>
+  <section id="stage" aria-label="Map page"><div id="wrap"><img id="page" alt="Preview of the map page. Drag on it to choose the area, or type the area in the Selection fields."><div id="sel"></div></div></section>
+  <main>
     <h1>Pick the map area</h1>
     <div class="sub" id="source"></div>
     <p class="hint">Drag a rectangle on the map. Use the zoom buttons for precision. Leave it empty to convert the whole page.</p>
     <div><button id="zin">Zoom +</button> <button id="zout">Zoom −</button> <button id="clear">Clear</button></div>
 
-    <h2>Selection (mm from top-left)</h2>
-    <pre id="crop">Whole page</pre>
+    <h2>Selection (mm from the top-left corner of the page)</h2>
+    <form id="cropForm" class="crop">
+      <label for="cx0">Left</label><input id="cx0" type="number" step="0.5" min="0">
+      <label for="cy0">Top</label><input id="cy0" type="number" step="0.5" min="0">
+      <label for="cx1">Right</label><input id="cx1" type="number" step="0.5" min="0">
+      <label for="cy1">Bottom</label><input id="cy1" type="number" step="0.5" min="0">
+    </form>
+    <pre id="crop" role="status" aria-live="polite">Whole page</pre>
 
     <h2>Model width</h2>
     <label>Printed width <input id="width" type="number" min="20" max="600" step="10" value="120"> mm</label>
@@ -51,7 +59,7 @@
     <p class="hint">Run from the project folder:</p>
     <pre id="cmd"></pre>
     <button id="copy">Copy command</button>
-  </aside>
+  </main>
 </div>
 <script>
 const PAGE = /*__PAGE_DATA__*/null;
@@ -98,9 +106,10 @@ function command() {
   c += ` --width ${document.getElementById("width").value}`;
   return c;
 }
-function update() {
+function update(syncFields = true) {
   drawSel();
   const f = v => v.toFixed(1);
+  if (syncFields) fields.forEach((el, i) => { el.value = rect ? f(rect[i]) : ""; });
   const w = rect ? rect[2] - rect[0] : PAGE.width_mm, h = rect ? rect[3] - rect[1] : PAGE.height_mm;
   document.getElementById("crop").textContent = rect
     ? `--crop ${rect.map(f).join(",")}\n(${f(w)} × ${f(h)} mm on the map page)` : "Whole page";
@@ -113,6 +122,19 @@ document.getElementById("width").addEventListener("input", update);
 document.getElementById("zin").addEventListener("click", () => { zoom = Math.min(8, zoom * 1.5); layout(); });
 document.getElementById("zout").addEventListener("click", () => { zoom = Math.max(0.25, zoom / 1.5); layout(); });
 document.getElementById("clear").addEventListener("click", () => { rect = null; update(); });
+// Typed selection: the same rectangle as dragging, for exact values.
+const fields = ["cx0", "cy0", "cx1", "cy1"].map(id => document.getElementById(id));
+fields[0].max = fields[2].max = PAGE.width_mm; fields[1].max = fields[3].max = PAGE.height_mm;
+function fromFields() {
+  const v = fields.map(f => Number(f.value));
+  if (fields.some(f => f.value === "") || v.some(Number.isNaN)) return;
+  const r = [Math.min(v[0], v[2]), Math.min(v[1], v[3]), Math.max(v[0], v[2]), Math.max(v[1], v[3])];
+  rect = [Math.max(0, r[0]), Math.max(0, r[1]), Math.min(PAGE.width_mm, r[2]), Math.min(PAGE.height_mm, r[3])];
+  if (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1) rect = null;
+  update(false);
+}
+fields.forEach(f => f.addEventListener("change", fromFields));
+document.getElementById("cropForm").addEventListener("submit", e => { e.preventDefault(); fromFields(); });
 document.getElementById("copy").addEventListener("click", () => navigator.clipboard?.writeText(command()));
 window.addEventListener("resize", layout);
 img.addEventListener("load", () => { layout(); update(); });

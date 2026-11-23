@@ -11,6 +11,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .braille import BrailleSpec
 from .scene import Primitive
 
 DOT_TOLERANCE = 0.15
@@ -56,6 +57,47 @@ class TactileClass:
     role: str  # terrain | object | ignore
     height_mm: float = 0.0
     min_width_mm: float = 0.0
+    label: str = ""  # Braille label in the legend (defaults to the class name)
+    texture: Texture | None = None  # raised pattern on top, to tell same-height classes apart
+    merge_gaps: bool = True  # objects: merge parts closer than the minimum gap (not for trees)
+
+    @property
+    def legend_label(self) -> str:
+        return self.label or self.name.replace("_", " ")
+
+
+@dataclass(frozen=True)
+class Texture:
+    """A raised pattern on top of an area: ``dots`` (a grid of small bumps) or ``lines``
+    (parallel ridges at ``angle_deg``)."""
+
+    kind: str  # "dots" | "lines"
+    pitch_mm: float = 3.0
+    size_mm: float = 1.2  # dot diameter or ridge width
+    height_mm: float = 0.5
+    angle_deg: float = 45.0
+
+    def describe(self) -> str:
+        if self.kind == "dots":
+            return f"dots every {self.pitch_mm:g} mm"
+        return f"ridges every {self.pitch_mm:g} mm"
+
+
+@dataclass(frozen=True)
+class TactileRules:
+    """Thresholds the tactile check uses. Starting values from common tactile-graphics
+    practice; confirm them with the people who will read the maps."""
+
+    min_feature_mm: float = 1.0  # narrower raised parts are hard to feel and to print
+    min_gap_mm: float = 3.0  # raised parts closer than this feel like one
+    min_height_step_mm: float = 0.5  # smaller height differences are hard to notice
+    min_symbol_area_mm2: float = 9.0  # smaller isolated areas are hard to identify
+    # Generalisation (generalize.py): what to adjust automatically before checking.
+    sliver_mm: float = 0.4  # terrain strips narrower than this are drawing artefacts
+    clean_slivers: bool = True
+    open_passages: bool = True
+    widen_thin: bool = True
+    merge_close_objects: bool = True
 
 
 @dataclass
@@ -65,6 +107,11 @@ class Config:
     min_area_mm2: float
     classes: dict[str, TactileClass]
     rules: list[SymbolRule] = field(default_factory=list)
+    tactile: TactileRules = field(default_factory=TactileRules)
+    braille: BrailleSpec = field(default_factory=BrailleSpec)
+    orientation_corner_mm: float = 8.0  # cut at the top-right corner; 0 = none
+    title: str = ""  # Braille title along the bottom edge ("" = none)
+    map_scale: float = 0.0  # e.g. 4000 for 1:4000; 0 = unknown
 
     def classify(self, p: Primitive) -> tuple[str, str]:
         """(class, isom code) of a primitive; ``unclassified`` if no rule matches."""
@@ -95,10 +142,7 @@ def load_config(path: str | Path | None = None, heights: str | Path | None = Non
             raise ValueError(f"heights file names unknown classes: {sorted(unknown)}")
         data = _merge(data, {k: over[k] for k in ("output", "class") if k in over})
     out = data.get("output", {})
-    classes = {
-        name: TactileClass(name, c.get("role", "ignore"), float(c.get("height_mm", 0.0)), float(c.get("min_width_mm", 0.0)))
-        for name, c in data.get("class", {}).items()
-    }
+    classes = {name: _tactile_class(name, c) for name, c in data.get("class", {}).items()}
     rules = []
     for s in data.get("symbol", []):
         if s["class"] not in classes:
@@ -124,4 +168,22 @@ def load_config(path: str | Path | None = None, heights: str | Path | None = Non
         min_area_mm2=float(out.get("min_area_mm2", 0.0)),
         classes=classes,
         rules=rules,
+        tactile=TactileRules(**data.get("tactile", {})),
+        braille=BrailleSpec(**data.get("braille", {})),
+        orientation_corner_mm=float(out.get("orientation_corner_mm", 8.0)),
+        title=str(out.get("title", "")),
+        map_scale=float(out.get("map_scale", 0.0)),
+    )
+
+
+def _tactile_class(name: str, c: dict) -> TactileClass:
+    tex = c.get("texture")
+    return TactileClass(
+        name,
+        c.get("role", "ignore"),
+        float(c.get("height_mm", 0.0)),
+        float(c.get("min_width_mm", 0.0)),
+        str(c.get("label", "")),
+        Texture(**tex) if isinstance(tex, dict) else None,
+        bool(c.get("merge_gaps", True)),
     )

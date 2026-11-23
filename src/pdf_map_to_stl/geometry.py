@@ -111,7 +111,7 @@ def fill_geometry(items: Sequence, even_odd: bool | None) -> BaseGeometry:
         geom: BaseGeometry = Polygon()
         for g, _ in polys:
             geom = geom.symmetric_difference(g)
-        return _areal(geom)
+        return areal(geom)
     # Non-zero winding: largest rings first; a ring wound opposite to the ring that
     # contains it cuts a hole, otherwise it adds area. Exact for nested, non-crossing
     # rings, which is what map software writes.
@@ -127,7 +127,7 @@ def fill_geometry(items: Sequence, even_odd: bool | None) -> BaseGeometry:
         else:
             geom = geom.union(g)
         placed.append((g, area))
-    return _areal(geom)
+    return areal(geom)
 
 
 def stroke_geometry(
@@ -155,7 +155,7 @@ def stroke_geometry(
                 mitre_limit=PDF_MITER_LIMIT,
             )
         )
-    return _areal(unary_union(parts)) if parts else Polygon()
+    return areal(unary_union(parts)) if parts else Polygon()
 
 
 def centerlines(items: Sequence, close_path: bool = False) -> list[LineString]:
@@ -166,7 +166,7 @@ def centerlines(items: Sequence, close_path: bool = False) -> list[LineString]:
     ]
 
 
-def _areal(g: BaseGeometry) -> BaseGeometry:
+def areal(g: BaseGeometry) -> BaseGeometry:
     """Keep only the polygonal part of a geometry."""
     if g.is_empty:
         return Polygon()
