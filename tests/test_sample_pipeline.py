@@ -49,7 +49,7 @@ def test_full_build_is_valid_and_deterministic(tmp_path):
     assert r1["stl"]["status"].endswith("NoError")
     assert r1["validation"]["metrics"]["accuracy"] >= 0.995
     assert r1["validation"]["metrics"]["evaluated_share"] >= 0.75
-    for name in ("model.stl", "classes.png", "symbols.csv", "layers.svg", "tuner.html"):
+    for name in ("model.stl", "legend.stl", "description.txt", "classes.png", "symbols.csv", "layers.svg", "tuner.html"):
         assert _sha(tmp_path / "a" / name) == _sha(tmp_path / "b" / name), name
 
 

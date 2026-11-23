@@ -4,13 +4,19 @@ This page is for anyone changing the code. For using the tool, see the [README](
 
 ## The idea in one paragraph
 
+The goal is a tactile map **for blind and visually impaired readers**: everything is
+judged by whether the printed plate can be read by touch. The people running the tool
+are usually sighted.
+
 An orienteering map exported to PDF (from OCAD or similar) is pure vector data: every
 area, line and dot is a path with an exact colour, painted in a fixed order. So the
 program never guesses from pixels. It reads the paths, recognises each map symbol from
 its exact colour, width and pattern, works out what is visible where by replaying the
 paint order with polygons, and turns each kind of area or object into a block of a
-chosen height on a base plate. Pixels are used only to *check* the result, never to
-make it.
+chosen height on a base plate. Then it makes the result readable by touch: it
+simplifies what a finger cannot resolve, adds textures, an orientation corner, Braille
+and a tactile legend, and checks what is still too fine. Pixels are used only to
+*check* the result, never to make it.
 
 ## Pipeline
 
@@ -27,11 +33,17 @@ make it.
    │                objects: kept as drawn (walls, hedges, trees sit on the terrain)
    ▼
  map model (PDF points)
-   │  model3d.py    scale to print size, widen thin lines, extrude by height, merge
+   │  model3d.py    scale to print size, widen thin lines
+   │  generalize.py remove artefact slivers, open narrow passages, widen thin areas,
+   │                merge walls that are too close
+   │  model3d.py    textures, Braille title, orientation corner; extrude and merge
    ▼
  tactile model (mm) ──▶ model.stl
    │
-   ├─ preview.py    relief_preview.png
+   ├─ legend.py         legend.stl     (tactile key: samples + Braille labels)
+   ├─ tactile_check.py  can it be read by touch? thin parts, gaps, height steps…
+   ├─ describe.py       description.txt (plain text: holding, legend, scale, check)
+   ├─ preview.py    relief_preview.png, legend_preview.png, tactile_check.png
    ├─ tuner.py      tuner.html   (choose heights interactively → heights.toml)
    ├─ report.py     symbols.csv, layers.svg, report.json
    └─ validate.py   classes.png, validation_errors.png (agreement with the rendered PDF)
@@ -50,7 +62,12 @@ make it.
 | `geometry.py` | PDF path items → Shapely polygons (fill rules, stroke caps/joins, Béziers) | `fill_geometry`, `stroke_geometry` |
 | `config.py` | loads TOML; matches a primitive to a class | `load_config`, `Config.classify` |
 | `compose.py` | visible terrain + objects | `build_map` |
-| `model3d.py` | layers in mm, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `model3d.py` | layers in mm, textures, Braille title, orientation corner, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `generalize.py` | tactile simplification of the layers | `generalize` |
+| `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
+| `legend.py` | the tactile legend plate | `build_legend` |
+| `tactile_check.py` | readability-by-touch checks | `check_model` |
+| `describe.py` | plain-text description | `describe` |
 | `validate.py` | pixel check against the PDF | `validate` |
 | `preview.py`, `report.py` | images, CSV, SVG, JSON | |
 | `tuner.py` + `tuner_template.html` | interactive height tuner | `write_tuner` |
@@ -79,9 +96,23 @@ north lines, thin outlines) are dropped before composing, so they never hide any
 `config/default.toml`: which colour is which symbol, which class is terrain or object,
 heights, minimum widths. Supporting a new map should normally need no code change.
 
-**Heights are chosen by touch.** Default heights are placeholders. `tuner.html` lets
-the user try heights on a 3D view and saves `heights.toml`; `--region` prints a small
-test tile to feel them before printing the whole map.
+**Readable by touch, by design.** Default heights sit on levels 0.5 mm apart, and
+classes that share a level get a raised texture, so no two touching areas feel the
+same. Walkable ground is low, barriers are high, water is recessed. The thresholds in
+`[tactile]` (1 mm features, 3 mm gaps, 0.5 mm steps) are common tactile-graphics
+starting values; they should be confirmed with readers.
+
+**Generalise, then check.** `generalize.py` does the safe, common simplifications a
+tactile cartographer would do by hand, always moving area between terrain classes so
+they keep tiling the map. `tactile_check.py` then reports whatever is still too fine,
+with locations, instead of silently hiding it.
+
+**Everything a reader needs is on the plate.** Orientation corner, Braille title,
+separate Braille legend; Braille is placed at standard physical size, never scaled.
+
+**Heights are confirmed by touch.** `tuner.html` lets the operator try heights on a 3D
+view (or in a plain form) and saves `heights.toml`; `--region` prints a small test tile
+to have them read before printing the whole map.
 
 ## Coordinate frames
 
@@ -99,12 +130,16 @@ test tile to feel them before printing the whole map.
   reorder a `[[symbol]]` rule in the TOML (first match wins).
 - **A new kind of feature:** add a `[class.name]` with a role and height, then point a
   rule at it. Objects can set `min_width_mm`.
-- **Change how the solid is built** (e.g. textures for vegetation): `model3d.build_solid`.
+- **Textures, Braille labels, heights:** `texture`, `label`, `height_mm` of each
+  `[class.*]` in the TOML; Braille size in `[braille]`; tactile thresholds and which
+  generalisation steps run in `[tactile]`.
+- **Change how the solid is built:** `model3d.build_solid`.
 - **Change the check:** `validate.py`. Keep `tests/test_sample_pipeline.py` passing: it
   checks the STL is watertight, the agreement is at least 99.5 %, and two runs give
   byte-identical files.
 
 ## Tests
 
-`pytest` runs geometry unit tests and end-to-end checks on `samples/sample.pdf`
-(about 30 s). `ruff check src tests` must pass.
+`pytest` runs unit tests (geometry, Braille, generalisation, tactile checks, legend)
+and end-to-end checks on `samples/sample.pdf` (about a minute). `ruff check src tests`
+must pass.

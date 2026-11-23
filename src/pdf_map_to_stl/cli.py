@@ -44,6 +44,10 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--heights", type=Path, help="heights.toml saved from tuner.html")
     b.add_argument("--region", type=_rect, metavar="X0,Y0,X1,Y1",
                    help="only this rectangle of the model, mm from its bottom-left corner: a test tile")
+    b.add_argument("--title", metavar="TEXT",
+                   help='Braille title along the bottom edge (default: the file name; --title "" for none)')
+    b.add_argument("--map-scale", type=float, metavar="N",
+                   help="scale of the printed map, e.g. 4000 for 1:4000 (used in description.txt)")
     b.add_argument("--no-validate", action="store_true", help="skip the pixel check against the PDF")
     b.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>)")
 
@@ -52,21 +56,33 @@ def main(argv: list[str] | None = None) -> None:
 
     if a.command == "pick":
         write_picker(a.pdf, out / "pick.html", a.page)
-        print(f"Open {out / 'pick.html'} in a browser, drag a rectangle, and run the command it shows.")
+        print(f"Area picker written to {out / 'pick.html'}.")
+        print("Open it in a browser, choose the area by dragging or by typing it in millimetres,")
+        print("then run the command it shows.")
         return
 
-    r = build(BuildOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.width, a.region, not a.no_validate))
-    print(f"STL      {out / 'model.stl'}  ({r['model']['width_mm']} x {r['model']['height_mm']} mm, "
-          f"{r['stl']['triangles']} triangles)")
-    print(f"Tune     {out / 'tuner.html'}  (heights; saves heights.toml)")
-    print(f"Symbols  {out / 'symbols.csv'}")
+    r = build(BuildOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.width, a.region,
+                           a.title, a.map_scale, not a.no_validate))
+    # Plain sentences, one per line: easy to follow with a screen reader.
+    m, c = r["model"], r["tactile_check"]
+    print(f"Model written to {out / 'model.stl'}: {m['width_mm']:.0f} by {m['height_mm']:.0f} mm, "
+          f"{c['total_height_mm']:g} mm high.")
+    print(f"Legend written to {out / 'legend.stl'}.")
+    print(f"Description written to {out / 'description.txt'}: how to hold the model, the legend, and the checks.")
+    problems = [f"{c[k]['count']} {k.replace('_', ' ')}" for k in ("thin_parts", "narrow_gaps", "low_steps", "hidden_objects")
+                if c[k]["count"]]
+    if problems:
+        print(f"Tactile check: {', '.join(problems)}. Details in description.txt and tactile_check.png.")
+    else:
+        print("Tactile check: passed.")
+    print(f"Heights can be tuned in {out / 'tuner.html'}.")
     if r["validation"]:
         v = r["validation"]["metrics"]
-        print(f"Check    {v['accuracy']:.2%} agreement with the PDF on {v['evaluated_share']:.0%} of the area")
+        print(f"Agreement with the PDF: {v['accuracy']:.2%} of the checked area.")
     if r["unclassified"]:
-        print(f"WARNING  {len(r['unclassified'])} symbol signatures not recognised: add rules for them "
-              f"(rows with class 'unclassified' in symbols.csv)")
-    print(f"Done in {r['seconds']} s")
+        print(f"Warning: {len(r['unclassified'])} kinds of map symbol were not recognised. "
+              f"Add rules for the rows marked unclassified in {out / 'symbols.csv'}.")
+    print(f"Done in {r['seconds']} seconds.")
 
 
 if __name__ == "__main__":
