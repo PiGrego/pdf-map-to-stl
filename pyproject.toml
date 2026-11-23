@@ -4,17 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-map-to-stl"
-version = "0.1.0"
+version = "0.2.0"
 description = "Conversion of vector orienteering maps into tactile maps for 3D printing, developed by BrailleFly and Corifea."
 requires-python = ">=3.11"
 dependencies = [
-    "PyMuPDF",
+    "PyMuPDF>=1.24",
     "numpy",
     "Pillow",
     "scipy",
-    "shapely",
-    "opencv-python",
-    "ezdxf",
+    "shapely>=2.0",
+    "manifold3d>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -24,10 +23,13 @@ dev = [
 ]
 
 [project.scripts]
-pdf-map-to-stl = "pdf_map_to_stl.main:main"
+pdf-map-to-stl = "pdf_map_to_stl.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+pdf_map_to_stl = ["*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

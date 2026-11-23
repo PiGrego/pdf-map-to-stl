@@ -1,0 +1,264 @@
+"""Step 1: read a vector map PDF into an ordered list of painted primitives.
+
+A *primitive* is what one PDF paint operation leaves on the page: a polygon (in PDF
+points), already cut by the clip paths it is drawn inside and by the working area
+(the page, or a crop of it), plus its colour and stroke width.
+
+One special case matters for orienteering maps: area patterns such as ISOM 402
+("open land with scattered trees") are exported as a regular grid of small dots,
+trimmed by a clip path that is exactly the area's outline. Such a *dot screen*
+becomes a single ``dots`` primitive whose polygon is that clip outline.
+
+Coordinates: PDF points (1/72 inch) in PyMuPDF's page frame, origin at the top-left
+of the page, y pointing down. This is the same frame PyMuPDF renders in, so no
+calibration between vectors and pixels is ever needed.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+import pymupdf
+from scipy.spatial import cKDTree
+from shapely.geometry import LineString, box
+from shapely.geometry.base import BaseGeometry
+
+from .geometry import centerlines, fill_geometry, stroke_geometry
+
+PT_TO_MM = 25.4 / 72.0
+
+# A clip path counts as a dot screen when everything drawn inside it is at least this
+# many fills of one colour and (within this relative spread) one size.
+MIN_SCREEN_DOTS = 16
+SCREEN_SIZE_TOLERANCE = 0.05
+
+Rect = tuple[float, float, float, float]
+
+
+@dataclass
+class Primitive:
+    seqno: float  # paint order; later paints cover earlier ones
+    kind: str  # "fill" | "stroke" | "dots"
+    rgb: tuple[int, int, int]
+    geom: BaseGeometry  # painted area, clipped, in PDF points
+    extent_mm: float  # longest side of the source path's bounding box
+    width_mm: float = 0.0  # stroke width (strokes only)
+    dot_mm: float = 0.0  # dot diameter (dot screens only)
+    pitch_mm: float = 0.0  # distance between dots (dot screens only)
+    blend: str = "Normal"  # PDF blend mode of the enclosing group
+    lines: list[LineString] = field(default_factory=list)  # stroke centrelines, unclipped
+
+
+@dataclass
+class Scene:
+    path: Path
+    page_number: int
+    page_rect: Rect  # working area in PDF points: the page, or the crop
+    primitives: list[Primitive]  # sorted by paint order
+    stats: dict
+
+    @property
+    def width_pt(self) -> float:
+        return self.page_rect[2] - self.page_rect[0]
+
+    @property
+    def height_pt(self) -> float:
+        return self.page_rect[3] - self.page_rect[1]
+
+
+# ----------------------------------------------------------------------------- public
+
+
+def crop_rect_pt(page_rect, crop_mm: Rect | None) -> Rect:
+    """Working area in PDF points: the page, or ``crop_mm`` (x0, y0, x1, y1 in mm from
+    the page's top-left corner) clipped to the page."""
+    if crop_mm is None:
+        return tuple(page_rect)
+    x0, y0, x1, y1 = (v / PT_TO_MM for v in crop_mm)
+    px0, py0, px1, py1 = page_rect
+    r = (
+        max(px0, px0 + min(x0, x1)),
+        max(py0, py0 + min(y0, y1)),
+        min(px1, px0 + max(x0, x1)),
+        min(py1, py0 + max(y0, y1)),
+    )
+    if r[2] <= r[0] or r[3] <= r[1]:
+        raise ValueError(f"crop {crop_mm} mm lies outside the page")
+    return r
+
+
+def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None = None) -> Scene:
+    """Read one page (optionally only ``crop_mm`` of it) into a Scene."""
+    pdf_path = Path(pdf_path)
+    with pymupdf.open(pdf_path) as doc:
+        page = doc[page_number]
+        area = crop_rect_pt(page.rect, crop_mm)
+        drawings = page.get_drawings(extended=True)
+
+    paints, clips = _attach_clip_stacks(drawings)
+    clip_region = _ClipRegions(clips, box(*area))
+    screens = _find_dot_screens(paints)
+
+    prims: list[Primitive] = []
+    seen_screens: set[int] = set()
+    for paint in paints:
+        screen = paint.clips[-1] if paint.clips and paint.clips[-1] in screens else None
+        if screen is not None:
+            # All dots of a screen become one primitive, emitted at the first dot.
+            if screen not in seen_screens:
+                seen_screens.add(screen)
+                prims.extend(_dot_screen_primitive(screens[screen], clip_region(paint.clips), paint.blend))
+            continue
+        if not _may_reach(paint.d, area):
+            continue
+        region = clip_region(paint.clips)
+        if not region.is_empty:
+            prims.extend(_paint_primitives(paint.d, region, paint.blend))
+    prims.sort(key=lambda p: p.seqno)
+
+    stats = {
+        "drawings": len(drawings),
+        "paint_ops": dict(Counter(p.d["type"] for p in paints)),
+        "clips": len(clips),
+        "dot_screens": len(screens),
+        "dot_screens_in_area": sum(p.kind == "dots" for p in prims),
+        "primitives_in_area": len(prims),
+        "area_pt": [round(v, 4) for v in area],
+    }
+    return Scene(pdf_path, page_number, area, prims, stats)
+
+
+# ----------------------------------------------------------------------------- steps
+
+
+@dataclass
+class _Paint:
+    d: dict  # the PyMuPDF drawing
+    clips: tuple[int, ...]  # indices of the clip drawings it is nested in, outermost first
+    blend: str
+
+
+def _attach_clip_stacks(drawings: list[dict]) -> tuple[list[_Paint], dict[int, dict]]:
+    """PyMuPDF lists clips and groups inline, with a nesting ``level``; turn that into an
+    explicit clip stack and blend mode for every fill or stroke."""
+    clips: dict[int, dict] = {}
+    stack: list[tuple[int, str, int]] = []  # (level, "clip" | "group", drawing index)
+    paints: list[_Paint] = []
+    for i, d in enumerate(drawings):
+        level = d.get("level", 0)
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        if d["type"] in ("clip", "group"):
+            if d["type"] == "clip":
+                clips[i] = d
+            stack.append((level, d["type"], i))
+            continue
+        chain = tuple(idx for _, kind, idx in stack if kind == "clip")
+        groups = [idx for _, kind, idx in stack if kind == "group"]
+        blend = drawings[groups[-1]].get("blendmode", "Normal") if groups else "Normal"
+        paints.append(_Paint(d, chain, blend))
+    return paints, clips
+
+
+class _ClipRegions:
+    """Area left visible by a clip stack (intersection of its clip paths and the working
+    area), computed once per distinct stack."""
+
+    def __init__(self, clips: dict[int, dict], area: BaseGeometry):
+        self.clips = clips
+        self.cache: dict[tuple[int, ...], BaseGeometry] = {(): area}
+
+    def __call__(self, chain: tuple[int, ...]) -> BaseGeometry:
+        if chain not in self.cache:
+            parent = self(chain[:-1])
+            c = self.clips[chain[-1]]
+            own = fill_geometry(c["items"], c.get("even_odd"))
+            self.cache[chain] = parent if parent.is_empty else parent.intersection(own)
+        return self.cache[chain]
+
+
+def _find_dot_screens(paints: list[_Paint]) -> dict[int, list[dict]]:
+    """Clip index -> its dots, for every clip whose content is a dot screen."""
+    children: dict[int, list[dict]] = {}
+    for p in paints:
+        if p.clips:
+            children.setdefault(p.clips[-1], []).append(p.d)
+    return {ci: ds for ci, ds in children.items() if _is_dot_screen(ds)}
+
+
+def _is_dot_screen(children: list[dict]) -> bool:
+    if len(children) < MIN_SCREEN_DOTS or any(c["type"] != "f" for c in children):
+        return False
+    if len({_rgb(c["fill"]) for c in children}) != 1:
+        return False
+    sizes = np.array([max(c["rect"].width, c["rect"].height) for c in children])
+    return float(sizes.std()) <= SCREEN_SIZE_TOLERANCE * float(sizes.mean())
+
+
+def _dot_screen_primitive(dots: list[dict], region: BaseGeometry, blend: str) -> list[Primitive]:
+    if region.is_empty or region.area <= 0:
+        return []
+    centres = np.array([((d["rect"].x0 + d["rect"].x1) / 2, (d["rect"].y0 + d["rect"].y1) / 2) for d in dots])
+    nearest, _ = cKDTree(centres).query(centres, k=2)
+    x0, y0, x1, y1 = region.bounds
+    return [
+        Primitive(
+            seqno=min(d["seqno"] for d in dots),
+            kind="dots",
+            rgb=_rgb(dots[0]["fill"]),
+            geom=region,
+            extent_mm=max(x1 - x0, y1 - y0) * PT_TO_MM,
+            dot_mm=float(np.median([max(d["rect"].width, d["rect"].height) for d in dots])) * PT_TO_MM,
+            pitch_mm=float(np.median(nearest[:, 1])) * PT_TO_MM,
+            blend=blend,
+        )
+    ]
+
+
+def _may_reach(d: dict, area: Rect) -> bool:
+    """Cheap bounding-box test; strokes reach half their width beyond the path."""
+    r, pad = d["rect"], (d.get("width") or 0) / 2
+    return not (r.x1 + pad < area[0] or r.x0 - pad > area[2] or r.y1 + pad < area[1] or r.y0 - pad > area[3])
+
+
+def _paint_primitives(d: dict, region: BaseGeometry, blend: str) -> list[Primitive]:
+    """A fill, a stroke, or both (``fs``: the stroke is painted over the fill)."""
+    out = []
+    extent = max(d["rect"].width, d["rect"].height) * PT_TO_MM
+    if d["type"] in ("f", "fs"):
+        g = _clip(fill_geometry(d["items"], d.get("even_odd")), region)
+        if g is not None:
+            out.append(Primitive(d["seqno"], "fill", _rgb(d["fill"]), g, extent, blend=blend))
+    if d["type"] in ("s", "fs"):
+        cap = d.get("lineCap") or (0,)
+        cap = int(cap[0]) if isinstance(cap, (tuple, list)) else int(cap)
+        close = bool(d.get("closePath"))
+        g = _clip(stroke_geometry(d["items"], d.get("width") or 0, cap, int(d.get("lineJoin") or 0), close), region)
+        if g is not None:
+            out.append(
+                Primitive(
+                    d["seqno"] + 0.5,
+                    "stroke",
+                    _rgb(d["color"]),
+                    g,
+                    extent,
+                    width_mm=(d.get("width") or 0) * PT_TO_MM,
+                    blend=blend,
+                    lines=centerlines(d["items"], close),
+                )
+            )
+    return out
+
+
+def _clip(g: BaseGeometry, region: BaseGeometry) -> BaseGeometry | None:
+    if g.is_empty:
+        return None
+    g = g.intersection(region)
+    return g if not g.is_empty and g.area > 0 else None
+
+
+def _rgb(v) -> tuple[int, int, int]:
+    return tuple(round(x * 255) for x in v) if v else (0, 0, 0)

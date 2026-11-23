@@ -1,8 +1,0 @@
-﻿PyMuPDF
-numpy
-Pillow
-scipy
-shapely
-opencv-python-headless
-ezdxf
-pytest
