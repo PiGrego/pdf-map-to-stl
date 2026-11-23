@@ -34,3 +34,4 @@ desktop.ini
 !.env.example
 
 *.egg-info/
+.claude/

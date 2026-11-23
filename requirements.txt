@@ -1,9 +1,6 @@
-﻿PyMuPDF
+﻿PyMuPDF>=1.24
 numpy
 Pillow
 scipy
-shapely
-opencv-python
-ezdxf
-pytest
-ruff
+shapely>=2.0
+manifold3d>=3.0

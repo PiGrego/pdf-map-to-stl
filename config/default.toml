@@ -1,0 +1,246 @@
+# pdf-map-to-stl configuration.
+#
+# [[symbol]] rules recognise PDF paint operations; the first matching rule wins.
+# [class.*] says what each recognised class becomes in the tactile model.
+# All sizes are millimetres: on the PDF page for symbol rules, on the printed model
+# for [output] and [class.*].
+#
+# The symbol rules below are calibrated on samples/sample.pdf (a sprint map exported
+# from OCAD). Symbol codes follow ISOM 2000 / ISSprOM; codes marked "?" are guesses
+# that still need checking against the map legend.
+
+[output]
+width_mm = 120.0          # printed model width; the crop is scaled to this
+base_mm = 2.0             # base plate thickness
+min_area_mm2 = 0.4        # terrain pieces smaller than this are dropped (untouchable)
+
+# ---------------------------------------------------------------- tactile classes
+# role: "terrain" = area classes that tile the map; what is visible after paint order.
+#       "object"  = raised features placed on top (walls, hedges, trees); built from
+#                   their own outline, never cut by what is painted above them.
+#       "ignore"  = not part of the tactile model (course, contours, grid lines).
+# height_mm: top of the feature above the base plate. Negative = recessed into it.
+# min_width_mm (objects): lines are widened to at least this on the model.
+
+[class.paved]
+role = "terrain"
+height_mm = 0.0
+[class.paved_alt]
+role = "terrain"
+height_mm = 0.0
+[class.open_land]
+role = "terrain"
+height_mm = 0.4
+[class.open_land_scattered_trees]
+role = "terrain"
+height_mm = 0.4
+[class.rough_open]
+role = "terrain"
+height_mm = 0.4
+[class.forest]
+role = "terrain"
+height_mm = 0.8
+[class.vegetation_slow]
+role = "terrain"
+height_mm = 1.0
+[class.vegetation_difficult]
+role = "terrain"
+height_mm = 1.2
+[class.vegetation_impassable]
+role = "terrain"
+height_mm = 1.4
+[class.out_of_bounds]
+role = "terrain"
+height_mm = 1.6
+[class.canopy]
+role = "terrain"
+height_mm = 0.2
+[class.building]
+role = "terrain"
+height_mm = 2.5
+[class.water]
+role = "terrain"
+height_mm = -0.6
+
+[class.wall]
+role = "object"
+height_mm = 1.8
+min_width_mm = 0.8
+[class.hedge]
+role = "object"
+height_mm = 1.6
+min_width_mm = 1.0
+[class.tree]
+role = "object"
+height_mm = 1.6
+min_width_mm = 1.2
+[class.vegetation_line]
+role = "object"
+height_mm = 1.2
+min_width_mm = 0.6
+
+[class.outline]
+role = "ignore"
+[class.contour]
+role = "ignore"
+[class.course]
+role = "ignore"
+[class.north_line]
+role = "ignore"
+[class.grey_line]
+role = "ignore"
+[class.unclassified]
+role = "ignore"
+
+# ---------------------------------------------------------------- symbol rules
+# kind: "fill" | "stroke" | "dots" | "any". rgb matched within rgb_tol (default 3).
+# Optional: min_width_mm / max_width_mm (strokes), min_extent_mm / max_extent_mm
+# (bbox of the source path), dot_mm / pitch_mm (dot screens, matched within 15 %).
+
+[[symbol]]
+class = "open_land_scattered_trees"
+isom = "402"
+kind = "dots"
+rgb = [254, 191, 80]
+dot_mm = 0.615
+pitch_mm = 0.70
+
+[[symbol]]
+class = "open_land"
+isom = "401"
+kind = "fill"
+rgb = [254, 191, 80]
+
+[[symbol]]
+class = "rough_open"
+isom = "403?"
+kind = "fill"
+rgb = [255, 221, 164]
+
+[[symbol]]
+class = "forest"
+isom = "405"
+kind = "fill"
+rgb = [255, 255, 255]
+
+[[symbol]]
+class = "vegetation_slow"
+isom = "406?"
+kind = "any"
+rgb = [197, 228, 197]
+
+[[symbol]]
+class = "vegetation_difficult"
+isom = "408?"
+kind = "any"
+rgb = [143, 205, 148]
+
+[[symbol]]
+class = "tree"
+isom = "418?"
+kind = "fill"
+rgb = [45, 180, 87]
+max_extent_mm = 1.2
+
+[[symbol]]
+class = "vegetation_impassable"
+isom = "410?"
+kind = "fill"
+rgb = [45, 180, 87]
+
+[[symbol]]
+class = "vegetation_line"
+isom = "?"
+kind = "stroke"
+rgb = [45, 180, 87]
+
+[[symbol]]
+class = "hedge"
+isom = "421?"
+kind = "any"
+rgb = [8, 108, 49]
+
+[[symbol]]
+class = "out_of_bounds"
+isom = "520"
+kind = "any"
+rgb = [180, 179, 22]
+
+[[symbol]]
+class = "paved"
+isom = "501"
+kind = "any"
+rgb = [245, 220, 196]
+
+[[symbol]]
+class = "paved_alt"
+isom = "501?"
+kind = "any"
+rgb = [236, 191, 147]
+
+[[symbol]]
+class = "canopy"
+isom = "522"
+kind = "any"
+rgb = [209, 211, 212]
+
+[[symbol]]
+class = "building"
+isom = "521"
+kind = "any"
+rgb = [138, 140, 142]
+
+[[symbol]]
+class = "water"
+isom = "3xx"
+kind = "any"
+rgb = [0, 157, 221]
+
+[[symbol]]
+class = "wall"
+isom = "515/521?"
+kind = "stroke"
+rgb = [35, 31, 32]
+min_width_mm = 0.159       # 0.45 pt, the wall threshold the V15 work settled on
+
+[[symbol]]
+class = "outline"
+isom = "-"
+kind = "stroke"
+rgb = [35, 31, 32]
+
+[[symbol]]
+class = "wall"
+isom = "?"
+kind = "fill"
+rgb = [35, 31, 32]
+
+[[symbol]]
+class = "contour"
+isom = "101"
+kind = "any"
+rgb = [207, 117, 24]
+
+[[symbol]]
+class = "course"
+isom = "7xx"
+kind = "any"
+rgb = [180, 29, 142]
+
+[[symbol]]
+class = "north_line"
+isom = "601"
+kind = "any"
+rgb = [63, 176, 228]
+
+[[symbol]]
+class = "grey_line"
+isom = "?"
+kind = "any"
+rgb = [147, 149, 152]
+
+[[symbol]]
+class = "outline"
+isom = "-"
+kind = "any"
+rgb = [0, 0, 0]
