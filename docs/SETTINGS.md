@@ -51,6 +51,45 @@ too thin or too close to feel. Add your own profile by putting a `.toml` file in
 
 ## The settings
 
+### `[size]`: the suggested print size
+
+A tactile map can be printed at any size; what decides the right size is the map's
+detail. With `output.width_mm = "auto"` (the default) every build uses the **suggested
+size**, and `--width` or `--scale` override it. `pdf-map-to-stl size MAP.pdf [--crop …]`
+prints the suggestion in a few seconds without building.
+
+How it is found, on the map as drawn (before any generalisation):
+
+1. Every **passage** between two raised parts of the same class (two buildings, two
+   walls, two patches of open land; for trees, the gap between the printed dots) gives
+   the enlargement at which it becomes `tactile.min_gap_mm` (3 mm) wide. Every **raised
+   part** gives the enlargement at which it becomes `tactile.min_feature_mm` (1 mm) wide.
+2. The suggestion is the enlargement that satisfies `detail_share` (90 %) of them. The
+   rest is what generalisation adjusts and the tactile check reports.
+3. With a known map scale it is rounded to a round tactile scale (1:900, 1:1000…),
+   otherwise the width is rounded up to 10 mm.
+4. The plate (map plus about 60 mm for the title and north symbols) is kept between
+   `min_mm` and `max_mm` on its longer side. When the maximum decides, the description
+   says how big the map would need to be, and what share of the details survive.
+5. If the plate is larger than `bed_mm`, the description also gives the `--scale` (or
+   `--width`) that fits the printer bed in one piece, and the share of details at that size.
+
+On the Navile sample: the 50 × 37 mm part used by the tests gets 1:900 (map 278 mm wide,
+90 % of 373 details), or 1:1000 to fit a 256 mm bed (88 %); the whole A4 page would need
+about 1040 × 1470 mm at 1:1012, and is capped at 1000 mm (68 % of its details).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `min_mm` | `100` | the plate's longer side is at least this |
+| `max_mm` | `1000` | ...and at most this |
+| `detail_share` | `0.9` | share of passages and parts that must meet the tactile rules |
+| `ignore_below_mm` | `0.15` | details narrower than this on the PDF page are drawing artefacts, not counted |
+| `bed_mm` | `256` | printer bed; larger plates get a one-piece alternative, or print in tiles with `--region` |
+
+The map scale comes from `--map-scale`, else `output.map_scale`, else the page itself
+("Scala 1: 5000", "1:4 000"; `output.read_map_scale`). It sets the tactile scale in the
+title and lets the suggestion use round scales.
+
 ### `[features]`: what the model contains
 
 | Setting | Default | What it does |
@@ -187,13 +226,14 @@ read the maps, using test tiles.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `width_mm` | `120` | printed width of the map (or `--width`, or `--scale` with `--map-scale`) |
+| `width_mm` | `"auto"` | printed width of the map in mm; `"auto"` = the suggested size (`[size]`); `--width` and `--scale` override it |
 | `base_mm` | `2.0` | base plate thickness; recesses always leave 0.4 mm of plate |
 | `top_skin_mm` | `0.6` | per-layer parts: each area owns this much of the plate under it |
 | `north_height_mm` | `1.0` | height of the north symbols |
 | `orientation_corner_mm` | `0` | cut off the top-right corner of the plate by this much |
 | `title` | `"auto"` | Braille title at the top left: `"auto"` = the file name, `""` = none |
-| `map_scale` | `0` | scale of the printed map (or `--map-scale`) |
+| `map_scale` | `0` | scale of the printed map (or `--map-scale`); 0 = unknown |
+| `read_map_scale` | `true` | when the scale is unknown, read it from the page ("1:5000") |
 | `legend_max_height_mm` | `200` | the legend plate wraps into columns above this height |
 
 Fixed layout, not settings: 5 mm margins, north symbols 7 × 20 mm, legend samples

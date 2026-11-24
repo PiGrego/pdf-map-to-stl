@@ -17,17 +17,29 @@
 # [class.*] says what each recognised class becomes in the tactile model.
 # Sizes are millimetres: on the PDF page for symbol rules, on the printed model elsewhere.
 # The rules are calibrated on samples/orienteering-map-sample-Navile.pdf (ISSprOM sprint
-# map from OCAD, 1:5000); sample.pdf is a crop of the same map.
+# map from OCAD, 1:5000).
 
 [output]
-width_mm = 120.0          # printed model width (or use --scale with --map-scale)
+width_mm = "auto"         # printed map width in mm; "auto" = the suggested size (see [size])
 base_mm = 2.0             # base plate thickness
 top_skin_mm = 0.6         # parts export: each area owns this much of the plate under it
 north_height_mm = 1.0     # height of the north symbols
 orientation_corner_mm = 0 # optional: cut off the top-right corner (0 = no cut)
 title = "auto"            # Braille title at the top left: "auto" = map file name, "" = none
 map_scale = 0             # scale of the printed map (e.g. 5000); 0 = unknown
+read_map_scale = true     # if map_scale is 0, read it from the page ("Scala 1:5000", "1:4000")
 legend_max_height_mm = 200 # the legend plate wraps into columns above this height
+
+# ---------------------------------------------------------------- size
+# The suggested print size (size.py): the size at which detail_share of the map's
+# passages are at least tactile.min_gap_mm wide and its raised parts tactile.min_feature_mm.
+# Used when width_mm = "auto"; --width or --scale override it.
+[size]
+min_mm = 100              # the plate's longer side is at least this
+max_mm = 1000             # ...and at most this
+detail_share = 0.9        # share of passages and parts that must meet the tactile rules
+ignore_below_mm = 0.15    # details narrower than this on the PDF page are drawing artefacts
+bed_mm = 256              # printer bed: a larger plate is flagged (print it in tiles)
 
 # ---------------------------------------------------------------- features
 # What the model contains besides the map's own areas and objects.

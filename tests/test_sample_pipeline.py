@@ -1,21 +1,20 @@
-"""End-to-end checks on samples/sample.pdf."""
+"""End-to-end checks on part of the Navile map (tests/sample_map.py)."""
 
 import hashlib
 from pathlib import Path
 
 import pytest
+from sample_map import CROP_MM, NAVILE, TEST_WIDTH_MM
 
 from pdf_map_to_stl.compose import build_map
 from pdf_map_to_stl.config import load_config
 from pdf_map_to_stl.pipeline import BuildOptions, build
 from pdf_map_to_stl.scene import load_scene
 
-SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "sample.pdf"
-
 
 @pytest.fixture(scope="module")
 def mapmodel():
-    return build_map(load_scene(SAMPLE), load_config())
+    return build_map(load_scene(NAVILE, crop_mm=CROP_MM), load_config())
 
 
 def test_dot_screens_become_402_areas(mapmodel):
@@ -43,8 +42,8 @@ def _sha(p: Path) -> str:
 
 
 def test_full_build_is_valid_and_deterministic(tmp_path):
-    r1 = build(BuildOptions(SAMPLE, tmp_path / "a"))
-    build(BuildOptions(SAMPLE, tmp_path / "b"))
+    r1 = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path / "a"))
+    build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path / "b"))
     assert r1["stl"]["genus"] == 0
     assert r1["stl"]["status"].endswith("NoError")
     assert r1["validation"]["metrics"]["accuracy"] >= 0.995
@@ -54,7 +53,7 @@ def test_full_build_is_valid_and_deterministic(tmp_path):
 
 
 def test_crop_selects_part_of_the_page():
-    scene = load_scene(SAMPLE, crop_mm=(10, 5, 30, 20))
+    scene = load_scene(NAVILE, crop_mm=(80, 195, 100, 210))
     x0, y0, x1, y1 = scene.page_rect
     assert (x1 - x0) * 25.4 / 72 == pytest.approx(20)
     assert (y1 - y0) * 25.4 / 72 == pytest.approx(15)
@@ -77,7 +76,7 @@ def test_heights_file_rejects_unknown_class(tmp_path):
 
 
 def test_region_makes_a_small_test_tile(tmp_path):
-    r = build(BuildOptions(SAMPLE, tmp_path, region_mm=(40, 30, 70, 50), validate=False))
+    r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, region_mm=(40, 30, 70, 50), validate=False))
     assert r["model"]["width_mm"] == pytest.approx(30)
     assert r["model"]["height_mm"] == pytest.approx(20)
     assert r["stl"]["genus"] == 0

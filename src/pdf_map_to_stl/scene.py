@@ -16,6 +16,7 @@ calibration between vectors and pixels is ever needed.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,20 @@ class Scene:
 
 
 # ----------------------------------------------------------------------------- public
+
+
+# "1:5000", "1 : 4 000", "1:10.000" printed on the page (title block, legend)
+_SCALE_TEXT = re.compile(r"(?<![\d.,])1\s*:\s*(\d{1,3}(?:[ .\u00a0\u202f]\d{3})+|\d{3,6})(?![\d,])")
+
+
+def read_map_scale(pdf_path: str | Path, page_number: int = 0) -> float:
+    """The map scale printed on the page ("Scala 1: 5000" gives 5000), or 0 if the page
+    states none, or more than one."""
+    with pymupdf.open(pdf_path) as doc:
+        text = doc[page_number].get_text()
+    found = {int(re.sub(r"\D", "", m)) for m in _SCALE_TEXT.findall(text)}
+    found = {v for v in found if 500 <= v <= 100_000}
+    return float(found.pop()) if len(found) == 1 else 0.0
 
 
 def crop_rect_pt(page_rect, crop_mm: Rect | None) -> Rect:

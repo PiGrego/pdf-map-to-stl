@@ -104,6 +104,8 @@ def build_layers(
     keeps only that rectangle, for a small test tile (no margins). ``title`` is the
     Braille title text ("" = none).
     """
+    if cfg.width_mm <= 0:
+        raise ValueError("no print width: set output.width_mm, or let pipeline.build use the suggested size")
     rect = m.scene.page_rect
     scale = cfg.width_mm / m.scene.width_pt
     w, h = cfg.width_mm, m.scene.height_pt * scale

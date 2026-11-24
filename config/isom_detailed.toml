@@ -6,12 +6,12 @@
 # All sizes are millimetres: on the PDF page for symbol rules, on the printed model
 # for [output] and [class.*].
 #
-# The symbol rules below are calibrated on samples/sample.pdf (a sprint map exported
-# from OCAD). Symbol codes follow ISOM 2000 / ISSprOM; codes marked "?" are guesses
+# The symbol rules below are calibrated on samples/orienteering-map-sample-Navile.pdf
+# (a sprint map exported from OCAD). Symbol codes follow ISOM 2000 / ISSprOM; codes marked "?" are guesses
 # that still need checking against the map legend.
 
 [output]
-width_mm = 120.0          # printed model width; the crop is scaled to this
+width_mm = "auto"         # printed map width in mm; "auto" = the suggested size
 base_mm = 2.0             # base plate thickness
 orientation_corner_mm = 8.0  # the top-right corner is cut off so the reader finds "up"; 0 = no cut
 title = "auto"            # Braille title at the top left: "auto" = map file name, "" = none

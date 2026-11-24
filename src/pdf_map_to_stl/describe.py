@@ -112,7 +112,7 @@ def automatic_changes(cfg: Config, t: TactileModel, items: list[Classified]) -> 
 
 
 def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list[str],
-             items: list[Classified] | None = None) -> str:
+             items: list[Classified] | None = None, size_lines: list[str] | None = None) -> str:
     enlarge = t.scale / PT_TO_MM  # model mm per PDF mm
     lines = [
         f"TACTILE MAP: {t.title or 'untitled'}",
@@ -127,6 +127,8 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
                      f"1 cm on the model is {ts / 100:.0f} m on the ground.")
     else:
         lines.append(f"Scale: the model is {enlarge:.2f} times the size of the printed map.")
+    if size_lines:
+        lines += ["", "SIZE"] + size_lines
 
     lines += ["", "HOW TO HOLD IT"]
     hold = ["North is up."]

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from manifold3d import Manifold, OpType
+from sample_map import CROP_MM, NAVILE, TEST_WIDTH_MM
 from shapely.geometry import box
 
 from pdf_map_to_stl.config import Texture, load_config
@@ -18,8 +19,6 @@ from pdf_map_to_stl.parts import build_parts
 from pdf_map_to_stl.pipeline import BuildOptions, LegendOptions, build, build_legend_sample
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE = ROOT / "samples" / "sample.pdf"
-NAVILE = ROOT / "samples" / "orienteering-map-sample-Navile.pdf"
 
 
 def small_model():
@@ -72,17 +71,17 @@ def test_new_textures_stay_inside(kind):
 
 
 def test_scale_option_sets_the_width(tmp_path):
-    r = build(BuildOptions(SAMPLE, tmp_path, map_scale=5000, scale=1000, region_mm=(0, 0, 30, 30), validate=False))
+    r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, out=tmp_path, map_scale=5000, scale=1000, region_mm=(0, 0, 30, 30), validate=False))
     assert r["model"]["scale_model_mm_per_pdf_mm"] == pytest.approx(5.0, rel=1e-3)
 
 
 def test_scale_option_needs_the_map_scale(tmp_path):
     with pytest.raises(ValueError, match="map-scale"):
-        build(BuildOptions(SAMPLE, tmp_path, scale=1000, validate=False))
+        build(BuildOptions(NAVILE, crop_mm=CROP_MM, out=tmp_path, map_scale=0, scale=1000, validate=False))
 
 
 def test_build_writes_one_stl_per_layer(tmp_path):
-    r = build(BuildOptions(SAMPLE, tmp_path, validate=False))
+    r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, validate=False))
     files = sorted(p.name for p in (tmp_path / "parts").glob("*.stl"))
     assert files[0] == "00_base.stl" and len(files) == len(r["parts"]) >= 10
     assert "Load" in (tmp_path / "parts" / "README.txt").read_text(encoding="utf-8")
@@ -90,7 +89,7 @@ def test_build_writes_one_stl_per_layer(tmp_path):
 
 
 def test_legend_sample_lists_the_symbols_found(tmp_path):
-    r = build_legend_sample(LegendOptions(SAMPLE, tmp_path))
+    r = build_legend_sample(LegendOptions(NAVILE, tmp_path, crop_mm=CROP_MM))
     assert {"open_land", "forest", "building", "paved", "barrier", "tree"} <= set(r["classes"])
     assert "boulder" not in r["classes"]  # not on this map
     assert r["legend_stl"]["genus"] == 0
@@ -98,7 +97,6 @@ def test_legend_sample_lists_the_symbols_found(tmp_path):
     assert 'Braille "open land"' in text
 
 
-@pytest.mark.skipif(not NAVILE.exists(), reason="Navile sample not available")
 def test_navile_legend_has_the_guidebook_symbols_of_that_map(tmp_path):
     r = build_legend_sample(LegendOptions(NAVILE, tmp_path, title="key navile"))
     assert set(r["classes"]) == {"water", "paved", "open_land", "forest", "forbidden", "building",
@@ -107,6 +105,6 @@ def test_navile_legend_has_the_guidebook_symbols_of_that_map(tmp_path):
 
 
 def test_detailed_config_still_builds(tmp_path):
-    r = build(BuildOptions(SAMPLE, tmp_path, config=ROOT / "config" / "isom_detailed.toml",
+    r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, config=ROOT / "config" / "isom_detailed.toml",
                            region_mm=(20, 20, 60, 50), validate=False))
     assert r["stl"]["genus"] == 0

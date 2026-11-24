@@ -63,10 +63,21 @@ pdf-map-to-stl build MAP.pdf --set class.canopy.enabled=true  show canopy (porti
 `tuner.html` does the same with switches and a 3D view. Each build writes
 `settings_used.toml` with every value it used. All settings: [docs/SETTINGS.md](docs/SETTINGS.md).
 
-## Scale
+## Size and scale
 
-The guidebook recommends **1:500 to 1:1000 on A4**; build with `--map-scale` (the printed
-map's scale) and `--scale 1000`. The thresholds (1 mm features, 3 mm gaps, 0.5 mm height
+A tactile map can be printed from 100 mm to 1000 mm across; the right size depends on
+the map's detail. By default every build uses the **suggested size**: the one at which
+90 % of the map's passages are at least 3 mm wide and its raised parts at least 1 mm,
+rounded to a round tactile scale. The map scale is read from the page ("Scala 1: 5000")
+or given with `--map-scale`. When the plate is larger than the printer bed, the build
+also says which `--scale` fits the bed and how much detail that keeps.
+
+```
+pdf-map-to-stl size "maps\my map.pdf" --crop 70,190,120,227     the suggestion only, in seconds
+```
+
+`--scale 1000` or `--width 250` build at another size. The guidebook recommends
+**1:500 to 1:1000**; details are in [docs/SETTINGS.md](docs/SETTINGS.md) (`[size]`). The thresholds (1 mm features, 3 mm gaps, 0.5 mm height
 steps) are common tactile-graphics starting values in `[tactile]` of the config: confirm
 them with readers, using test tiles (step 5).
 
@@ -93,13 +104,14 @@ pdf-map-to-stl pick "maps\my map.pdf"
 Open the `pick.html` it writes, drag a rectangle over the part you want (or type it in
 millimetres) and copy the command it shows.
 
-**2. Build** at the tactile scale
+**2. Build**
 
 ```
-pdf-map-to-stl build "maps\my map.pdf" --crop 14.6,14.6,27.8,24.1 --map-scale 5000 --scale 1000
+pdf-map-to-stl build "maps\my map.pdf" --crop 14.6,14.6,27.8,24.1
 ```
 
-(or set the printed width directly with `--width 200`). Results go to
+It builds at the suggested size (see **Size and scale** above), or at `--scale 1000` or
+`--width 200` if you give one. Results go to
 `outputs\<map name>\` (change with `-o`):
 
 | File | What it is |
@@ -165,6 +177,7 @@ each entry), in `outputs\<map name>\legend\`.
 
 ```
 pdf-map-to-stl pick   MAP.pdf [--page N] [-o DIR]
+pdf-map-to-stl size   MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [--map-scale N] [settings options]
 pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [--width MM]
                               [--map-scale N] [--scale N] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
@@ -176,9 +189,9 @@ pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [-c CONFIG.toml]
 ```
 
 - `--crop`: part of the PDF page, in mm from the page's top-left corner.
-- `--map-scale`: the printed map's scale (e.g. `5000`); adds the scale to the title.
-- `--scale`: build at this tactile scale (e.g. `1000`); needs `--map-scale`.
-- `--width`: printed width of the map in mm, instead of `--scale`.
+- `--map-scale`: the printed map's scale (e.g. `5000`); by default read from the page.
+- `--scale`: build at this tactile scale (e.g. `1000`) instead of the suggested size.
+- `--width`: printed width of the map in mm, instead of the suggested size.
 - `--region`: part of the *map* on the model, in mm from its bottom-left corner (test tiles).
 - `--title`: Braille title (default: the file name; `--title ""` for none).
 - `--settings`: a settings file or a profile (`no_textures`, `as_drawn`, `heights_only`);

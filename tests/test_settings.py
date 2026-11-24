@@ -4,6 +4,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from sample_map import CROP_MM, NAVILE, TEST_WIDTH_MM
 from shapely.geometry import box
 
 from pdf_map_to_stl.compose import build_map
@@ -16,7 +17,6 @@ from pdf_map_to_stl.tactile_check import check_model
 from pdf_map_to_stl.tuner import tuner_data
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE = ROOT / "samples" / "sample.pdf"
 TILE = (40, 30, 70, 50)  # a small test tile of the sample, model mm
 
 
@@ -89,7 +89,7 @@ def test_canopy_is_paved_unless_switched_on():
 
 @pytest.fixture(scope="module")
 def scene():
-    return load_scene(SAMPLE)
+    return load_scene(NAVILE, crop_mm=CROP_MM)
 
 
 def test_canopy_switch_moves_its_area_between_classes(scene):
@@ -103,11 +103,12 @@ def test_canopy_switch_moves_its_area_between_classes(scene):
 
 def test_tuner_offers_classes_that_are_switched_off(scene):
     cfg = load_config()
+    cfg.width_mm = TEST_WIDTH_MM
     m = build_map(scene, cfg)
     t = build_layers(m, cfg, TILE)
     names = switchable_classes(m.items, cfg)
     assert "canopy" in names and "outline" not in names  # ignored classes cannot be switched on
-    rows = {c["class"]: c for c in tuner_data(t, {}, "sample.pdf", cfg, check_model(t, cfg).summary, names)["classes"]}
+    rows = {c["class"]: c for c in tuner_data(t, {}, NAVILE.name, cfg, check_model(t, cfg).summary, names)["classes"]}
     assert rows["canopy"]["enabled"] is False and rows["canopy"]["texture"] == "stripes"
     assert rows["tree"]["shape"] == "dot" and rows["tree"]["point_symbol"]
 
@@ -154,7 +155,7 @@ def test_merging_objects_can_be_switched_off():
 
 
 def _tile(tmp_path, *settings, overrides=()):
-    return build(BuildOptions(SAMPLE, tmp_path, region_mm=TILE, validate=False, settings=settings, overrides=overrides))
+    return build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, region_mm=TILE, validate=False, settings=settings, overrides=overrides))
 
 
 def test_heights_only_profile_has_no_textures_and_keeps_drawn_shapes(tmp_path):

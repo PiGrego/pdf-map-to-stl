@@ -162,20 +162,32 @@ class TactileRules:
 
 
 @dataclass(frozen=True)
+class SizeRules:
+    """How the suggested print size is chosen (size.py)."""
+
+    min_mm: float = 100.0  # the plate's longer side is at least this
+    max_mm: float = 1000.0  # ...and at most this
+    detail_share: float = 0.9  # share of passages and parts that must meet the tactile rules
+    ignore_below_mm: float = 0.15  # narrower details on the PDF page are drawing artefacts
+    bed_mm: float = 256.0  # printer bed: larger plates are flagged (print in tiles)
+
+
+@dataclass(frozen=True)
 class Output:
-    width_mm: float = 120.0  # printed model width
+    width_mm: float | str = "auto"  # printed map width; "auto" = the suggested size
     base_mm: float = 2.0  # base plate thickness
     top_skin_mm: float = 0.6  # parts export: each area owns this much of the plate under it
     north_height_mm: float = 1.0
     orientation_corner_mm: float = 0.0  # cut at the top-right corner; 0 = none
     title: str = ""  # Braille title at the top left ("" = none, "auto" = file name)
-    map_scale: float = 0.0  # e.g. 5000 for 1:5000; 0 = unknown
+    map_scale: float = 0.0  # e.g. 5000 for 1:5000; 0 = unknown (read it from the page if allowed)
+    read_map_scale: bool = True  # look for "1:5000" printed on the page when map_scale is 0
     legend_max_height_mm: float = 200.0
 
 
 @dataclass
 class Config:
-    width_mm: float
+    width_mm: float  # printed map width; 0 = the suggested size
     base_mm: float
     classes: dict[str, TactileClass]
     rules: list[SymbolRule] = field(default_factory=list)
@@ -184,10 +196,12 @@ class Config:
     features: Features = field(default_factory=Features)
     smoothing: Smoothing = field(default_factory=Smoothing)
     generalize: Generalize = field(default_factory=Generalize)
+    size: SizeRules = field(default_factory=SizeRules)
     textures: dict[str, Texture] = field(default_factory=dict)  # the texture library
     orientation_corner_mm: float = 0.0
     title: str = ""
     map_scale: float = 0.0
+    read_map_scale: bool = True
     north_height_mm: float = 1.0
     top_skin_mm: float = 0.6
     legend_max_height_mm: float = 200.0
@@ -326,7 +340,8 @@ def _section(kind, d: dict, name: str):
     return kind(**d)
 
 
-TOP_SECTIONS = ("output", "features", "smoothing", "generalize", "tactile", "braille", "texture", "class", "symbol")
+TOP_SECTIONS = ("output", "size", "features", "smoothing", "generalize", "tactile", "braille", "texture", "class",
+                "symbol")
 
 
 def from_dict(data: dict, sources: list[str] | None = None) -> Config:
@@ -361,8 +376,10 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
     smoothing = _section(Smoothing, data.get("smoothing", {}), "smoothing")
     if smoothing.line_join not in JOINS or smoothing.line_cap not in CAPS:
         raise ValueError(f"smoothing: line_join is one of {JOINS}, line_cap one of {CAPS}")
+    if out.width_mm != "auto" and not isinstance(out.width_mm, (int, float)):
+        raise ValueError(f"output.width_mm is a number of mm or \"auto\", not {out.width_mm!r}")
     return Config(
-        width_mm=float(out.width_mm),
+        width_mm=0.0 if out.width_mm == "auto" else float(out.width_mm),
         base_mm=float(out.base_mm),
         classes=classes,
         rules=rules,
@@ -371,10 +388,12 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         features=_section(Features, data.get("features", {}), "features"),
         smoothing=smoothing,
         generalize=_section(Generalize, data.get("generalize", {}), "generalize"),
+        size=_section(SizeRules, data.get("size", {}), "size"),
         textures=library,
         orientation_corner_mm=float(out.orientation_corner_mm),
         title=str(out.title),
         map_scale=float(out.map_scale),
+        read_map_scale=bool(out.read_map_scale),
         north_height_mm=float(out.north_height_mm),
         top_skin_mm=float(out.top_skin_mm),
         legend_max_height_mm=float(out.legend_max_height_mm),
@@ -461,10 +480,12 @@ def settings_dict(cfg: Config) -> dict:
         classes[name] = d
     return {
         "output": {
-            "width_mm": round(cfg.width_mm, 3), "base_mm": cfg.base_mm, "top_skin_mm": cfg.top_skin_mm,
-            "north_height_mm": cfg.north_height_mm, "orientation_corner_mm": cfg.orientation_corner_mm,
-            "title": cfg.title, "map_scale": cfg.map_scale, "legend_max_height_mm": cfg.legend_max_height_mm,
+            "width_mm": round(cfg.width_mm, 3) if cfg.width_mm else "auto", "base_mm": cfg.base_mm,
+            "top_skin_mm": cfg.top_skin_mm, "north_height_mm": cfg.north_height_mm,
+            "orientation_corner_mm": cfg.orientation_corner_mm, "title": cfg.title, "map_scale": cfg.map_scale,
+            "read_map_scale": cfg.read_map_scale, "legend_max_height_mm": cfg.legend_max_height_mm,
         },
+        "size": asdict(cfg.size),
         "features": asdict(cfg.features),
         "smoothing": asdict(cfg.smoothing),
         "generalize": asdict(cfg.generalize),

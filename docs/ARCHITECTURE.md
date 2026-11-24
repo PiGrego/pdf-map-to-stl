@@ -34,6 +34,7 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │                objects: kept as drawn (walls, hedges, trees sit on the terrain)
    ▼
  map model (PDF points)
+   │  size.py       suggested print size from the passages and parts of the map
    │  model3d.py    scale to print size, redraw lines along their centre (min width,
    │                caps and joins from [smoothing])
    │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
@@ -71,6 +72,7 @@ arguments.
 | `config.py` | loads the config and settings files; matches a primitive to a class; writes settings_used.toml | `load_config`, `Config.classify`, `Config.shown_as`, `settings_dict` |
 | `compose.py` | visible terrain + objects | `build_map` |
 | `model3d.py` | layers in mm, textures, standard symbols, Braille title, north symbols, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `size.py` | suggested print size from the map's details and scale | `suggest_size` |
 | `generalize.py` | tactile simplification and optional smoothing of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
 | `legend.py` | the tactile legend plate and its text | `build_legend`, `classes_in_map` |
@@ -136,6 +138,13 @@ same. Walkable ground is low, barriers are high, water is recessed. The threshol
 `[tactile]` (1 mm features, 3 mm gaps, 0.5 mm steps) are common tactile-graphics
 starting values; they should be confirmed with readers.
 
+**The details decide the size.** A tactile map can be printed at any size, so the
+size is not a fixed default: `size.py` measures every passage and raised part of the
+composed map and suggests the size at which 90 % of them meet the tactile rules, within
+100 to 1000 mm, with a one-piece alternative when the plate exceeds the printer bed.
+Generalisation then only has to fix the remaining few. The measurement runs on the map
+as drawn and takes seconds, so `pdf-map-to-stl size` can answer before a build.
+
 **Generalise, then check.** `generalize.py` does the safe, common simplifications a
 tactile cartographer would do by hand, always moving area between terrain classes so
 they keep tiling the map. `tactile_check.py` then reports whatever is still too fine,
@@ -180,6 +189,7 @@ textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 ## Tests
 
 `pytest` runs unit tests (geometry, Braille, generalisation, tactile checks, parts,
-legend) and end-to-end checks on `samples/sample.pdf` (about three minutes). Tests on
-`samples/orienteering-map-sample-Navile.pdf` are skipped if that file is missing.
+legend) and end-to-end checks on `samples/orienteering-map-sample-Navile.pdf`, a real
+sprint map, on a 50 x 37 mm window of it (`tests/sample_map.py`), mostly at a fixed
+120 mm print width so they stay fast; `tests/test_size.py` checks the suggested size.
 `ruff check src tests` must pass.
