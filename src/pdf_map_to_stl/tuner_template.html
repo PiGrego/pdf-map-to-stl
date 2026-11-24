@@ -172,6 +172,7 @@ const fmt = v => (Math.round(v * 10) / 10).toString();
 const CLASSES = MODEL.layers.filter(l => l.role === "terrain" || l.role === "object");
 const TEXTURES = MODEL.layers.filter(l => l.role === "texture");
 const BRAILLE = MODEL.layers.find(l => l.role === "braille");
+const FIXED = MODEL.layers.filter(l => l.role === "braille" || l.role === "north" || l.role === "frame");
 const initial = { base: MODEL.base_mm, heights: Object.fromEntries(CLASSES.map(l => [l.class, l.height_mm])) };
 // Saved values belong to the config they started from: after a rebuild with other heights,
 // old browser-saved values must not silently override the new ones.
@@ -256,8 +257,8 @@ function buildForm() {
 function totalHeight() {
   let top = 0;
   for (const l of CLASSES) top = Math.max(top, state.heights[l.class]);
-  for (const t of TEXTURES) top = Math.max(top, state.heights[t.on] + (t.height_mm - t.z0_mm));
-  if (BRAILLE) top = Math.max(top, BRAILLE.height_mm);
+  for (const t of TEXTURES) top = Math.max(top, Math.max(state.heights[t.on], 0) + (t.height_mm - t.z0_mm));
+  for (const f of FIXED) top = Math.max(top, f.height_mm);
   return state.base + top;
 }
 
@@ -460,11 +461,14 @@ function apply(state, visible) {
     const m = meshes[l.class];
     const owner = l.on || l.class;
     m.visible = visible[owner] !== false;
-    if (l.role === "braille") { m.position.z = base * exag; m.scale.z = l.height_mm * exag; continue; }
+    if (l.role === "braille" || l.role === "north" || l.role === "frame") {
+      m.position.z = base * exag; m.scale.z = l.height_mm * exag; continue;
+    }
     if (l.role === "texture") {
+      // On top of its class; on the floor of a recessed class (water waves).
       const h = state.heights[l.on];
-      m.visible = m.visible && h >= 0;
-      m.position.z = (base + h) * exag; m.scale.z = (l.height_mm - l.z0_mm) * exag;
+      const z = h >= 0 ? h : -Math.min(-h, base - MIN_FLOOR);
+      m.position.z = (base + z) * exag; m.scale.z = (l.height_mm - l.z0_mm) * exag;
       continue;
     }
     const h = state.heights[l.class];

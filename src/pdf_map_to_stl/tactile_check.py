@@ -67,7 +67,8 @@ def check_model(t: TactileModel, cfg: Config) -> CheckResult:
             continue  # flat: nothing to feel as a shape
         # 0.45 instead of 0.5: a 10 % tolerance, so a part exactly min_feature_mm wide passes.
         opened = g.buffer(-0.45 * w, 4).buffer(0.45 * w, 4)
-        thin[layer.cls] = _spots(g.difference(opened.buffer(0.01)), 0.15 * w * w)
+        # Spots under half a square of min_feature_mm are sharp corner tips, not features.
+        thin[layer.cls] = _spots(g.difference(opened.buffer(0.01)), 0.5 * w * w)
         if layer.height_mm > 0:
             closed = g.buffer(0.45 * gap, 4).buffer(-0.45 * gap, 4)
             narrow[layer.cls] = _spots(closed.difference(g.buffer(0.01)), 0.15 * gap * gap)

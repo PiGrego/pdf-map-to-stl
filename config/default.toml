@@ -1,36 +1,43 @@
-# pdf-map-to-stl configuration.
+# pdf-map-to-stl configuration: the tactile orienteering symbol set.
+#
+# The classes follow the draft guidebook "Conversion of ISOM and ISSprOM orienteering
+# maps into tactile orienteering maps" (Norwegian Orienteering Federation with Tommaso
+# Scalet): a small set of broad categories a visually impaired orienteer can tell apart
+# by touch, instead of the full ISOM / ISSprOM symbol set. Symbols with no tactile use
+# (canopy, contours, footpaths, course) are merged or dropped. For a richer set with
+# more classes, use config/isom_detailed.toml.
 #
 # [[symbol]] rules recognise PDF paint operations; the first matching rule wins.
 # [class.*] says what each recognised class becomes in the tactile model.
-# All sizes are millimetres: on the PDF page for symbol rules, on the printed model
-# for [output] and [class.*].
-#
-# The symbol rules below are calibrated on samples/sample.pdf (a sprint map exported
-# from OCAD). Symbol codes follow ISOM 2000 / ISSprOM; codes marked "?" are guesses
-# that still need checking against the map legend.
+# Sizes are millimetres: on the PDF page for symbol rules, on the printed model elsewhere.
+# The rules are calibrated on samples/orienteering-map-sample-Navile.pdf (ISSprOM sprint
+# map from OCAD, 1:5000); sample.pdf is a crop of the same map.
 
 [output]
-width_mm = 120.0          # printed model width; the crop is scaled to this
+width_mm = 120.0          # printed model width (or use --scale with --map-scale)
 base_mm = 2.0             # base plate thickness
-min_area_mm2 = 0.4        # terrain pieces smaller than this are dropped (untouchable)
-orientation_corner_mm = 8.0  # the top-right corner is cut off so the reader finds "up"; 0 = no cut
-title = "auto"            # Braille title along the bottom edge: "auto" = map file name, "" = none
-map_scale = 0             # map scale denominator (e.g. 4000) for the text description; 0 = unknown
+min_area_mm2 = 0.4        # pieces smaller than this are dropped (untouchable)
+top_skin_mm = 0.6         # parts export: each area owns this much of the plate under it
+north_symbol = true       # raised north symbols at the top-right and bottom-left corners
+north_height_mm = 1.0
+orientation_corner_mm = 0 # optional: cut off the top-right corner (0 = no cut)
+title = "auto"            # Braille title at the top left: "auto" = map file name, "" = none
+map_scale = 0             # scale of the printed map (e.g. 5000); 0 = unknown
+legend_max_height_mm = 200 # the legend plate wraps into columns above this height
 
 # ---------------------------------------------------------------- tactile rules
-# Thresholds for the tactile check (tactile_check.png, description.txt). Starting values
+# Thresholds for the tactile check and the automatic generalisation. Starting values
 # from common tactile-graphics practice; confirm them with the people who read the maps.
 [tactile]
 min_feature_mm = 1.0      # raised parts narrower than this are hard to feel
 min_gap_mm = 3.0          # raised parts closer than this feel like one
 min_height_step_mm = 0.5  # height differences smaller than this are hard to notice
 min_symbol_area_mm2 = 9.0 # isolated areas smaller than this are hard to identify
-# Tactile generalisation done automatically before the check (see generalize.py):
 sliver_mm = 0.4           # terrain strips narrower than this are drawing artefacts: absorbed
-clean_slivers = true      # give artefact strips to their neighbour
+clean_slivers = true
 open_passages = true      # widen passages between raised areas to min_gap_mm
 widen_thin = true         # widen raised areas narrower than min_feature_mm
-merge_close_objects = true # merge walls/hedges closer than min_gap_mm (not classes with merge_gaps = false)
+merge_close_objects = true # merge barriers closer than min_gap_mm (not classes with merge_gaps = false)
 
 # ---------------------------------------------------------------- Braille
 # Physical size of Braille dots; never scaled with the map.
@@ -42,101 +49,94 @@ cell_spacing_mm = 6.0
 line_spacing_mm = 10.0
 
 # ---------------------------------------------------------------- tactile classes
-# role: "terrain" = area classes that tile the map; what is visible after paint order.
-#       "object"  = raised features placed on top (walls, hedges, trees); built from
-#                   their own outline, never cut by what is painted above them.
-#       "ignore"  = not part of the tactile model (course, contours, grid lines).
-# height_mm: top of the feature above the base plate. Negative = recessed into it.
-# min_width_mm (objects): lines are widened to at least this on the model.
+# role: "terrain" (areas that tile the map), "object" (on top), "ignore".
+# height_mm: top above the base plate (negative = recessed).
+# texture: raised pattern on top: kind = "dots" | "lines" | "rings" | "waves",
+#   pitch_mm, size_mm (dot/ring diameter or ridge width), height_mm, angle_deg.
+# shape (objects): "dot" | "ring" | "cross" draws every instance as that standard symbol
+#   of size_mm, whatever it looks like on the source map; no shape = as drawn, widened
+#   to min_width_mm.
 # label: Braille label in the legend (short; no accents).
-# texture: raised pattern on top of the area, so classes at the same height can still
-#   be told apart: { kind = "dots" | "lines", pitch_mm, size_mm, height_mm, angle_deg }.
-#
-# Default design: levels 0.5 mm apart, and every class sharing a level has its own
-# texture. Walkable surfaces are low, things you cannot cross are high.
+# colour: [r, g, b] for previews, and the suggested filament colour of the part.
 
-[class.paved]                       # level 0: smooth
+[class.paved]                       # guidebook: paved area (smooth)
 role = "terrain"
+colour = [245, 220, 196]
 height_mm = 0.0
 label = "paved"
-[class.paved_alt]                   # level 0: ridges
+[class.open_land]                   # guidebook: grass, open land (dots)
 role = "terrain"
-height_mm = 0.0
-label = "paved 2"
-texture = { kind = "lines", pitch_mm = 3.0, size_mm = 1.0, height_mm = 0.5, angle_deg = 45 }
-[class.canopy]                      # level 0: dots
-role = "terrain"
-height_mm = 0.0
-label = "canopy"
-texture = { kind = "dots", pitch_mm = 4.0, size_mm = 1.5, height_mm = 0.5 }
-[class.open_land]                   # level 0.5: smooth
-role = "terrain"
+colour = [254, 191, 80]
 height_mm = 0.5
-label = "open"
-[class.open_land_scattered_trees]   # level 0.5: dots
-role = "terrain"
-height_mm = 0.5
-label = "open trees"
+label = "open land"
 texture = { kind = "dots", pitch_mm = 3.0, size_mm = 1.2, height_mm = 0.5 }
-[class.rough_open]                  # level 0.5: ridges
+[class.forest]                      # guidebook: forest (curls -> small rings)
 role = "terrain"
-height_mm = 0.5
-label = "rough open"
-texture = { kind = "lines", pitch_mm = 3.0, size_mm = 1.0, height_mm = 0.5, angle_deg = 45 }
-[class.forest]                      # level 1.0
-role = "terrain"
+colour = [255, 255, 255]
 height_mm = 1.0
 label = "forest"
-[class.vegetation_slow]             # level 1.5: smooth
+texture = { kind = "rings", pitch_mm = 4.0, size_mm = 2.4, height_mm = 0.5 }
+[class.forbidden]                   # guidebook: forbidden area (hatching)
 role = "terrain"
+colour = [180, 179, 22]
 height_mm = 1.5
-label = "slow green"
-[class.vegetation_difficult]        # level 1.5: ridges
-role = "terrain"
-height_mm = 1.5
-label = "hard green"
+label = "forbidden"
 texture = { kind = "lines", pitch_mm = 3.0, size_mm = 1.0, height_mm = 0.5, angle_deg = 45 }
-[class.vegetation_impassable]       # level 2.0
+[class.building]                    # guidebook: building (solid)
 role = "terrain"
-height_mm = 2.0
-label = "thicket"
-[class.out_of_bounds]               # level 2.5: ridges ("do not enter")
-role = "terrain"
-height_mm = 2.5
-label = "no entry"
-texture = { kind = "lines", pitch_mm = 3.0, size_mm = 1.0, height_mm = 0.5, angle_deg = -45 }
-[class.building]                    # level 3.0
-role = "terrain"
+colour = [138, 140, 142]
 height_mm = 3.0
 label = "building"
-[class.water]                       # recessed
+[class.water]                       # guidebook: body of water (waves), recessed
 role = "terrain"
+colour = [0, 157, 221]
 height_mm = -0.8
 label = "water"
+texture = { kind = "waves", pitch_mm = 3.0, size_mm = 0.8, height_mm = 0.4 }
 
-[class.wall]
+[class.barrier]                     # guidebook: uncrossable barrier (fence, wall)
 role = "object"
+colour = [35, 31, 32]
 height_mm = 3.5
 min_width_mm = 1.0
-label = "wall"
-[class.hedge]
+label = "barrier"
+[class.tree]                        # guidebook: tree (dot)
 role = "object"
+colour = [45, 180, 87]
 height_mm = 2.5
-min_width_mm = 1.2
-label = "hedge"
-[class.tree]
-role = "object"
-height_mm = 2.0
-min_width_mm = 2.0
-label = "tree"
-merge_gaps = false        # trees stay separate bumps
-[class.vegetation_line]
-role = "object"
-height_mm = 2.0
 min_width_mm = 1.0
-label = "green line"
+shape = "dot"
+size_mm = 2.5
+merge_gaps = false
+label = "tree"
+[class.boulder]                     # guidebook: boulder (ring); no rule matches it yet
+role = "object"
+colour = [35, 31, 32]
+height_mm = 2.5
+min_width_mm = 0.8
+shape = "ring"
+size_mm = 3.0
+merge_gaps = false
+label = "boulder"
+[class.man_made_object]             # guidebook: man-made object (cross)
+role = "object"
+colour = [35, 31, 32]
+height_mm = 2.5
+min_width_mm = 0.9
+shape = "cross"
+size_mm = 3.5
+merge_gaps = false
+label = "object"
 
 [class.outline]
+role = "ignore"
+[class.footpath]
+role = "ignore"
+[class.dotted_line]
+role = "ignore"
+[class.black_dots]
+role = "ignore"
+[class.vegetation_line]
 role = "ignore"
 [class.contour]
 role = "ignore"
@@ -153,151 +153,192 @@ role = "ignore"
 # kind: "fill" | "stroke" | "dots" | "any". rgb matched within rgb_tol (default 3).
 # Optional: min_width_mm / max_width_mm (strokes), min_extent_mm / max_extent_mm
 # (bbox of the source path), dot_mm / pitch_mm (dot screens, matched within 15 %).
+# The isom field records which map symbol a rule stands for ("?" = to be checked).
 
+# -- open land (yellow family)
 [[symbol]]
-class = "open_land_scattered_trees"
-isom = "402"
+class = "open_land"
+isom = "402 open land with scattered trees"
 kind = "dots"
 rgb = [254, 191, 80]
 dot_mm = 0.615
 pitch_mm = 0.70
-
 [[symbol]]
 class = "open_land"
-isom = "401"
+isom = "412 orchard"
+kind = "dots"
+rgb = [45, 180, 87]
+dot_mm = 0.62
+pitch_mm = 1.12
+[[symbol]]
+class = "open_land"
+isom = "415 cultivated land"
+kind = "dots"
+rgb = [35, 31, 32]
+dot_mm = 0.28
+pitch_mm = 1.12
+[[symbol]]
+class = "open_land"
+isom = "401 open land"
 kind = "fill"
 rgb = [254, 191, 80]
-
 [[symbol]]
-class = "rough_open"
-isom = "403?"
+class = "open_land"
+isom = "403 rough open land?"
 kind = "fill"
 rgb = [255, 221, 164]
 
+# -- forest and vegetation
 [[symbol]]
 class = "forest"
-isom = "405"
+isom = "405 forest"
 kind = "fill"
 rgb = [255, 255, 255]
-
 [[symbol]]
-class = "vegetation_slow"
-isom = "406?"
+class = "forest"
+isom = "406 vegetation, slow running?"
 kind = "any"
 rgb = [197, 228, 197]
-
 [[symbol]]
-class = "vegetation_difficult"
-isom = "408?"
+class = "forest"
+isom = "408 vegetation, difficult to run?"
 kind = "any"
 rgb = [143, 205, 148]
 
+# -- trees: green dots and green rings
 [[symbol]]
 class = "tree"
-isom = "418?"
+isom = "418 prominent tree / bush?"
 kind = "fill"
 rgb = [45, 180, 87]
 max_extent_mm = 1.2
-
 [[symbol]]
-class = "vegetation_impassable"
-isom = "410?"
+class = "tree"
+isom = "417 prominent large tree (ring)?"
+kind = "stroke"
+rgb = [45, 180, 87]
+max_extent_mm = 2.5
+[[symbol]]
+class = "forbidden"
+isom = "410 impassable vegetation?"
 kind = "fill"
 rgb = [45, 180, 87]
-
 [[symbol]]
 class = "vegetation_line"
-isom = "?"
+isom = "green line"
 kind = "stroke"
 rgb = [45, 180, 87]
 
+# -- barriers and forbidden areas
 [[symbol]]
-class = "hedge"
-isom = "421?"
+class = "barrier"
+isom = "421 impassable hedge?"
 kind = "any"
 rgb = [8, 108, 49]
-
 [[symbol]]
-class = "out_of_bounds"
-isom = "520"
+class = "forbidden"
+isom = "520 area that shall not be entered"
 kind = "any"
 rgb = [180, 179, 22]
 
+# -- paved
 [[symbol]]
 class = "paved"
-isom = "501"
+isom = "501 paved area"
 kind = "any"
 rgb = [245, 220, 196]
-
 [[symbol]]
-class = "paved_alt"
-isom = "501?"
+class = "paved"
+isom = "501 paved area, variant?"
 kind = "any"
 rgb = [236, 191, 147]
-
 [[symbol]]
-class = "canopy"
-isom = "522"
+class = "paved"
+isom = "522 canopy (no tactile use: shown as paved)"
 kind = "any"
 rgb = [209, 211, 212]
 
+# -- buildings, water
 [[symbol]]
 class = "building"
-isom = "521"
+isom = "521 building"
 kind = "any"
 rgb = [138, 140, 142]
-
 [[symbol]]
 class = "water"
-isom = "3xx"
+isom = "3xx water"
 kind = "any"
 rgb = [0, 157, 221]
 
+# -- black: crosses, footpaths, walls, outlines (order matters)
 [[symbol]]
-class = "wall"
-isom = "515/521?"
+class = "man_made_object"
+isom = "x man-made object"
 kind = "stroke"
 rgb = [35, 31, 32]
-min_width_mm = 0.159       # 0.45 pt, the wall threshold the V15 work settled on
-
+min_width_mm = 0.21
+max_width_mm = 0.23
+max_extent_mm = 1.6
+[[symbol]]
+class = "footpath"
+isom = "505 footpath (dash segments)"
+kind = "stroke"
+rgb = [35, 31, 32]
+min_width_mm = 0.245
+max_width_mm = 0.255
+max_extent_mm = 1.6
+[[symbol]]
+class = "dotted_line"
+isom = "dotted line (dots)"
+kind = "stroke"
+rgb = [35, 31, 32]
+max_extent_mm = 0.5
+[[symbol]]
+class = "barrier"
+isom = "515 / 518 impassable wall or fence"
+kind = "stroke"
+rgb = [35, 31, 32]
+min_width_mm = 0.159
 [[symbol]]
 class = "outline"
-isom = "-"
+isom = "thin black line (building and area outlines)"
 kind = "stroke"
 rgb = [35, 31, 32]
-
 [[symbol]]
-class = "wall"
-isom = "?"
+class = "black_dots"
+isom = "small black dots (decoration around vegetation)"
+kind = "fill"
+rgb = [35, 31, 32]
+max_extent_mm = 2.0
+[[symbol]]
+class = "barrier"
+isom = "black filled wall"
 kind = "fill"
 rgb = [35, 31, 32]
 
+# -- not part of the tactile map
 [[symbol]]
 class = "contour"
-isom = "101"
+isom = "101 contour"
 kind = "any"
 rgb = [207, 117, 24]
-
 [[symbol]]
 class = "course"
-isom = "7xx"
+isom = "7xx course overprint"
 kind = "any"
 rgb = [180, 29, 142]
-
 [[symbol]]
 class = "north_line"
-isom = "601"
+isom = "601 magnetic north line"
 kind = "any"
 rgb = [63, 176, 228]
-
 [[symbol]]
 class = "grey_line"
-isom = "?"
+isom = "grey line?"
 kind = "any"
 rgb = [147, 149, 152]
-
 [[symbol]]
 class = "outline"
-isom = "-"
+isom = "black frame"
 kind = "any"
 rgb = [0, 0, 0]

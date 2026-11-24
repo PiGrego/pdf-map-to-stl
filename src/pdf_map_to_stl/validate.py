@@ -25,9 +25,22 @@ WHITE = (255, 255, 255)
 
 
 def class_colours(cfg: Config, background: str) -> dict[str, tuple[int, int, int]]:
-    out: dict[str, tuple[int, int, int]] = {background: WHITE}
+    """Display colour per class: ``colour`` from the config, else its first rule's colour."""
+    out: dict[str, tuple[int, int, int]] = {}
     for r in cfg.rules:
         out.setdefault(r.cls, r.rgb)
+    out.setdefault(background, WHITE)
+    for name, tc in cfg.classes.items():
+        if tc.colour:
+            out[name] = tc.colour
+    return out
+
+
+def rule_colours(cfg: Config) -> dict[str, set[tuple[int, int, int]]]:
+    """Every PDF colour that a class can come from (for comparing with the rendered PDF)."""
+    out: dict[str, set[tuple[int, int, int]]] = {}
+    for r in cfg.rules:
+        out.setdefault(r.cls, set()).add(r.rgb)
     return out
 
 
@@ -69,8 +82,9 @@ def validate(m: MapModel, cfg: Config, px_per_pt: float = 10.0) -> Validation:
     support = np.zeros((len(names), size[1], size[0]), bool)
     pure = np.zeros((size[1], size[0]), bool)
     dot_classes = {c.cls for c in m.items if c.prim.kind == "dots"}
+    sources = rule_colours(cfg)
     for k, cls in enumerate(names):
-        accepted = [colours.get(cls, WHITE)]
+        accepted = sorted(sources.get(cls, set()) | ({WHITE} if cls == m.background_class else set()))
         if cls in dot_classes:
             accepted.append(WHITE)  # paper shows between the dots
         for rgb in accepted:

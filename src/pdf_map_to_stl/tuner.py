@@ -40,7 +40,7 @@ def tuner_data(t: TactileModel, colours: dict, pdf_name: str, config_name: str, 
         tc = cfg.classes.get(layer.on or layer.cls)
         if layer.role == "texture":
             colour = _hex([c * 0.8 for c in colours.get(layer.on, (255, 255, 255))])
-        elif layer.role == "braille":
+        elif layer.role in ("braille", "north", "frame"):
             colour = "#282828"
         else:
             colour = _hex(colours.get(layer.cls, (255, 255, 255)))
