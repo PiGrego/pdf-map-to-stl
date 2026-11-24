@@ -26,7 +26,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import LineString, box
 from shapely.geometry.base import BaseGeometry
 
-from .geometry import centerlines, fill_geometry, stroke_geometry
+from .geometry import CURVE_STEP_PT, centerlines, fill_geometry, stroke_geometry
 
 PT_TO_MM = 25.4 / 72.0
 
@@ -90,8 +90,11 @@ def crop_rect_pt(page_rect, crop_mm: Rect | None) -> Rect:
     return r
 
 
-def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None = None) -> Scene:
-    """Read one page (optionally only ``crop_mm`` of it) into a Scene."""
+def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None = None,
+               curve_step_mm: float | None = None) -> Scene:
+    """Read one page (optionally only ``crop_mm`` of it) into a Scene. Curves are drawn
+    with chords of ``curve_step_mm`` (on the PDF page; default 0.035 mm)."""
+    step = curve_step_mm / PT_TO_MM if curve_step_mm else CURVE_STEP_PT
     pdf_path = Path(pdf_path)
     with pymupdf.open(pdf_path) as doc:
         page = doc[page_number]
@@ -99,7 +102,7 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None 
         drawings = page.get_drawings(extended=True)
 
     paints, clips = _attach_clip_stacks(drawings)
-    clip_region = _ClipRegions(clips, box(*area))
+    clip_region = _ClipRegions(clips, box(*area), step)
     screens = _find_dot_screens(paints)
 
     prims: list[Primitive] = []
@@ -116,7 +119,7 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None 
             continue
         region = clip_region(paint.clips)
         if not region.is_empty:
-            prims.extend(_paint_primitives(paint.d, region, paint.blend))
+            prims.extend(_paint_primitives(paint.d, region, paint.blend, step))
     prims.sort(key=lambda p: p.seqno)
 
     stats = {
@@ -167,15 +170,16 @@ class _ClipRegions:
     """Area left visible by a clip stack (intersection of its clip paths and the working
     area), computed once per distinct stack."""
 
-    def __init__(self, clips: dict[int, dict], area: BaseGeometry):
+    def __init__(self, clips: dict[int, dict], area: BaseGeometry, step: float = CURVE_STEP_PT):
         self.clips = clips
+        self.step = step
         self.cache: dict[tuple[int, ...], BaseGeometry] = {(): area}
 
     def __call__(self, chain: tuple[int, ...]) -> BaseGeometry:
         if chain not in self.cache:
             parent = self(chain[:-1])
             c = self.clips[chain[-1]]
-            own = fill_geometry(c["items"], c.get("even_odd"))
+            own = fill_geometry(c["items"], c.get("even_odd"), self.step)
             self.cache[chain] = parent if parent.is_empty else parent.intersection(own)
         return self.cache[chain]
 
@@ -224,19 +228,19 @@ def _may_reach(d: dict, area: Rect) -> bool:
     return not (r.x1 + pad < area[0] or r.x0 - pad > area[2] or r.y1 + pad < area[1] or r.y0 - pad > area[3])
 
 
-def _paint_primitives(d: dict, region: BaseGeometry, blend: str) -> list[Primitive]:
+def _paint_primitives(d: dict, region: BaseGeometry, blend: str, step: float = CURVE_STEP_PT) -> list[Primitive]:
     """A fill, a stroke, or both (``fs``: the stroke is painted over the fill)."""
     out = []
     extent = max(d["rect"].width, d["rect"].height) * PT_TO_MM
     if d["type"] in ("f", "fs"):
-        g = _clip(fill_geometry(d["items"], d.get("even_odd")), region)
+        g = _clip(fill_geometry(d["items"], d.get("even_odd"), step), region)
         if g is not None:
             out.append(Primitive(d["seqno"], "fill", _rgb(d["fill"]), g, extent, blend=blend))
     if d["type"] in ("s", "fs"):
         cap = d.get("lineCap") or (0,)
         cap = int(cap[0]) if isinstance(cap, (tuple, list)) else int(cap)
         close = bool(d.get("closePath"))
-        g = _clip(stroke_geometry(d["items"], d.get("width") or 0, cap, int(d.get("lineJoin") or 0), close), region)
+        g = _clip(stroke_geometry(d["items"], d.get("width") or 0, cap, int(d.get("lineJoin") or 0), close, step=step), region)
         if g is not None:
             out.append(
                 Primitive(
@@ -247,7 +251,7 @@ def _paint_primitives(d: dict, region: BaseGeometry, blend: str) -> list[Primiti
                     extent,
                     width_mm=(d.get("width") or 0) * PT_TO_MM,
                     blend=blend,
-                    lines=centerlines(d["items"], close),
+                    lines=centerlines(d["items"], close, step),
                 )
             )
     return out

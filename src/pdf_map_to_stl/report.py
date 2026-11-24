@@ -19,7 +19,9 @@ def hex_colour(rgb: tuple[int, int, int]) -> str:
 
 def symbol_inventory(m: MapModel) -> list[dict]:
     """One row per distinct symbol signature found in the working area, with the class
-    the rules gave it. This is the table to check when adapting to a new map."""
+    the rules gave it, and what it is shown as on the model (empty = not shown; another
+    class = merged into it because its own class is switched off). This is the table to
+    check when adapting to a new map."""
     rows: dict[tuple, dict] = defaultdict(lambda: {"count": 0, "area_pt2": 0.0})
     for c in m.items:
         p = c.prim
@@ -28,9 +30,10 @@ def symbol_inventory(m: MapModel) -> list[dict]:
             hex_colour(p.rgb),
             round(p.width_mm, 3) if p.kind == "stroke" else "",
             f"{p.dot_mm:.3f}/{p.pitch_mm:.3f}" if p.kind == "dots" else "",
-            c.cls,
+            c.source or c.cls,
             c.isom,
             c.role,
+            c.cls if c.role != "ignore" else "",
         )
         rows[key]["count"] += 1
         rows[key]["area_pt2"] += p.geom.area
@@ -43,10 +46,11 @@ def symbol_inventory(m: MapModel) -> list[dict]:
             "class": cls,
             "isom": isom,
             "role": role,
+            "shown_as": shown,
             "count": v["count"],
             "area_mm2_on_pdf": round(v["area_pt2"] * PT_TO_MM**2, 3),
         }
-        for (kind, rgb, width, dots, cls, isom, role), v in sorted(rows.items(), key=lambda kv: (kv[0][4], kv[0][1]))
+        for (kind, rgb, width, dots, cls, isom, role, shown), v in sorted(rows.items(), key=lambda kv: (kv[0][4], kv[0][1]))
     ]
 
 

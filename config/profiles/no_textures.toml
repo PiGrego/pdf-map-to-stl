@@ -1,0 +1,6 @@
+# Profile: every area smooth. Classes differ only by height, so you can add textures
+# yourself in the slicer (for example fuzzy skin or a modifier on one part of parts/).
+# Use with: pdf-map-to-stl build MAP.pdf --settings no_textures
+
+[features]
+textures = false

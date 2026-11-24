@@ -12,3 +12,5 @@
 - Symbol recognition is data-driven: change `config/*.toml` rules, not code, to adapt
   to a new map.
 - Outputs (`outputs/`) are generated artifacts; never commit them.
+- Every automatic decision is a setting with a default (`config/default.toml`,
+  documented in `docs/SETTINGS.md`); add new behaviour the same way, never hard-coded.

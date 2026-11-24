@@ -14,7 +14,7 @@ program never guesses from pixels. It reads the paths, recognises each map symbo
 its exact colour, width and pattern, works out what is visible where by replaying the
 paint order with polygons, and turns each kind of area or object into a block of a
 chosen height on a base plate. Then it makes the result readable by touch: it
-simplifies what a finger cannot resolve, adds textures, an orientation corner, Braille
+simplifies what a finger cannot resolve, adds textures, north symbols, Braille
 and a tactile legend, and checks what is still too fine. Pixels are used only to
 *check* the result, never to make it.
 
@@ -26,16 +26,18 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │                dot-grid patterns (ISOM 402…) → one area = their clip outline
    ▼
  primitives (ordered)
-   │  config.py     rules in config/*.toml → class (open_land, building, wall, …) + role
+   │  config.py     rules in config/*.toml → class (open_land, building, wall, …) + role;
+   │                settings files and --set on top; classes switched off → merge_into
    ▼
  classified primitives
    │  compose.py    terrain: painter's algorithm with polygons → each point has one class
    │                objects: kept as drawn (walls, hedges, trees sit on the terrain)
    ▼
  map model (PDF points)
-   │  model3d.py    scale to print size, widen thin lines
-   │  generalize.py remove artefact slivers, open narrow passages, widen thin areas,
-   │                merge walls that are too close
+   │  model3d.py    scale to print size, redraw lines along their centre (min width,
+   │                caps and joins from [smoothing])
+   │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
+   │                areas, merge walls that are too close, (round corners)
    │  model3d.py    standard point symbols, textures, Braille title, north symbols;
    │                extrude and merge
    ▼
@@ -44,9 +46,11 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    ├─ parts.py          parts/*.stl    (one STL per layer, aligned, non-overlapping)
    ├─ legend.py         legend.stl     (tactile key: samples + Braille labels)
    ├─ tactile_check.py  can it be read by touch? thin parts, gaps, height steps…
-   ├─ describe.py       description.txt (plain text: holding, legend, scale, check)
+   ├─ describe.py       description.txt (plain text: holding, legend, scale, automatic
+   │                    changes, check)
+   ├─ config.py         settings_used.toml (every setting the build used)
    ├─ preview.py    relief_preview.png, legend_preview.png, tactile_check.png
-   ├─ tuner.py      tuner.html   (choose heights interactively → heights.toml)
+   ├─ tuner.py      tuner.html   (heights, switches, textures, shapes → settings.toml)
    ├─ report.py     symbols.csv, layers.svg, report.json
    └─ validate.py   classes.png, validation_errors.png (agreement with the rendered PDF)
 ```
@@ -60,22 +64,22 @@ arguments.
 
 | Module | Does | Main function |
 |---|---|---|
-| `cli.py` | `pick` and `build` commands | `main` |
+| `cli.py` | `pick`, `build` and `legend` commands | `main` |
 | `pipeline.py` | runs all steps, writes outputs | `build(BuildOptions)` |
 | `scene.py` | PDF → ordered primitives | `load_scene` |
 | `geometry.py` | PDF path items → Shapely polygons (fill rules, stroke caps/joins, Béziers) | `fill_geometry`, `stroke_geometry` |
-| `config.py` | loads TOML; matches a primitive to a class | `load_config`, `Config.classify` |
+| `config.py` | loads the config and settings files; matches a primitive to a class; writes settings_used.toml | `load_config`, `Config.classify`, `Config.shown_as`, `settings_dict` |
 | `compose.py` | visible terrain + objects | `build_map` |
-| `model3d.py` | layers in mm, textures, Braille title, orientation corner, solid, STL | `build_layers`, `build_solid`, `write_stl` |
-| `generalize.py` | tactile simplification of the layers | `generalize` |
+| `model3d.py` | layers in mm, textures, standard symbols, Braille title, north symbols, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `generalize.py` | tactile simplification and optional smoothing of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
 | `legend.py` | the tactile legend plate and its text | `build_legend`, `classes_in_map` |
 | `parts.py` | one STL per layer for slicers, with a README | `build_parts`, `write_parts` |
 | `tactile_check.py` | readability-by-touch checks | `check_model` |
-| `describe.py` | plain-text description | `describe` |
+| `describe.py` | plain-text description, including every automatic change | `describe`, `automatic_changes` |
 | `validate.py` | pixel check against the PDF | `validate` |
 | `preview.py`, `report.py` | images, CSV, SVG, JSON | |
-| `tuner.py` + `tuner_template.html` | interactive height tuner | `write_tuner` |
+| `tuner.py` + `tuner_template.html` | interactive tuner: heights, switches, textures, shapes | `write_tuner` |
 | `pick.py` + `pick_template.html` | interactive area picker | `write_picker` |
 
 ## Key decisions
@@ -101,6 +105,18 @@ north lines, thin outlines) are dropped before composing, so they never hide any
 `config/default.toml`: which colour is which symbol, which class is terrain or object,
 heights, minimum widths. Supporting a new map should normally need no code change.
 
+**Every automatic decision is a setting.** Textures, standard symbols, line ends and
+corners, smoothing, each generalisation step, and whether a class is shown at all have a
+default in the config and can be changed per build (`--settings`, `--set`, the tuner),
+without editing it. Settings are checked key by key, so a typo is an error. Each build
+writes `settings_used.toml` and lists its automatic changes in `description.txt`, so
+nothing happens without a trace. All settings: [SETTINGS.md](SETTINGS.md).
+
+**Switching a class off keeps the map whole.** A terrain class that is off (canopy, by
+default) is resolved in `compose.classify` into its `merge_into` class before the painter's
+algorithm runs, so its area is not lost; `Classified.source` keeps the original class
+for `symbols.csv` and the description. An object class that is off is ignored.
+
 **The guidebook's symbol set by default.** `config/default.toml` follows the draft
 guidebook on converting ISOM / ISSprOM maps into tactile orienteering maps (Norwegian
 Orienteering Federation): a few broad categories (paved, open land, forest, forbidden,
@@ -125,12 +141,12 @@ tactile cartographer would do by hand, always moving area between terrain classe
 they keep tiling the map. `tactile_check.py` then reports whatever is still too fine,
 with locations, instead of silently hiding it.
 
-**Everything a reader needs is on the plate.** Orientation corner, Braille title,
+**Everything a reader needs is on the plate.** North symbols, Braille title and scale,
 separate Braille legend; Braille is placed at standard physical size, never scaled.
 
-**Heights are confirmed by touch.** `tuner.html` lets the operator try heights on a 3D
-view (or in a plain form) and saves `heights.toml`; `--region` prints a small test tile
-to have them read before printing the whole map.
+**Heights are confirmed by touch.** `tuner.html` lets the operator try heights, switches,
+textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
+`--region` prints a small test tile to have them read before printing the whole map.
 
 ## Coordinate frames
 
@@ -149,9 +165,13 @@ to have them read before printing the whole map.
 - **A new kind of feature:** add a `[class.name]` with a role and height, then point a
   rule at it. Objects can set `min_width_mm`.
 - **Textures, symbols, Braille labels, heights, colours:** `texture`, `shape`/`size_mm`,
-  `label`, `height_mm`, `colour` of each `[class.*]` in the TOML; Braille size in
-  `[braille]`; thresholds and generalisation steps in `[tactile]`; north symbols, top
-  skin of parts and legend height in `[output]`.
+  `label`, `height_mm`, `colour` of each `[class.*]` in the TOML; texture presets in
+  `[texture.*]`; Braille size in `[braille]`; switches in `[features]`; outline drawing
+  in `[smoothing]`; generalisation steps in `[generalize]`; check thresholds in
+  `[tactile]`; top skin of parts and legend height in `[output]`. See SETTINGS.md.
+- **A new setting:** add a field to the matching dataclass in `config.py` (unknown keys
+  are rejected, so the TOML cannot use it before), use it, add it to `default.toml` and
+  to SETTINGS.md. `settings_dict` writes it to settings_used.toml by itself.
 - **Change how the solid is built:** `model3d.build_solid`.
 - **Change the check:** `validate.py`. Keep `tests/test_sample_pipeline.py` passing: it
   checks the STL is watertight, the agreement is at least 99.5 %, and two runs give
