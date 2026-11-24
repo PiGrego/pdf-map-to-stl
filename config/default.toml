@@ -24,6 +24,8 @@ width_mm = "auto"         # printed map width in mm; "auto" = the suggested size
 base_mm = 2.0             # base plate thickness
 top_skin_mm = 0.6         # parts export: each area owns this much of the plate under it
 north_height_mm = 1.0     # height of the north symbols
+window_edge_mm = 1.5      # polygon windows: width of the raised line along the map's edge
+window_edge_height_mm = 1.0
 orientation_corner_mm = 0 # optional: cut off the top-right corner (0 = no cut)
 title = "auto"            # Braille title at the top left: "auto" = map file name, "" = none
 map_scale = 0             # scale of the printed map (e.g. 5000); 0 = unknown
@@ -48,6 +50,7 @@ textures = true           # raised patterns on areas; false = every area smooth 
 standard_symbols = true   # trees, boulders, crosses as standard tactile symbols; false = as drawn on the map
 north_symbol = true       # raised north symbols at the top-right and bottom-left corners
 legend_frames = true      # raised frame around flat samples (paved) on the legend
+window_edge = true        # polygon windows: a raised line along the map's edge (outside it the plate is flat)
 
 # ---------------------------------------------------------------- smoothing
 # How outlines are drawn. Sizes are mm on the model, except curve_step_mm (on the PDF).

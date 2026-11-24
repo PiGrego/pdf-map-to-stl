@@ -22,7 +22,8 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
 
 ```
  MAP.pdf
-   │  scene.py      every paint operation → polygon, cut by its clip paths and the crop;
+   │  scene.py      every paint operation → polygon, cut by its clip paths and the window
+   │                (a rectangle or a polygon chosen in pick.html);
    │                dot-grid patterns (ISOM 402…) → one area = their clip outline
    ▼
  primitives (ordered)
@@ -97,6 +98,12 @@ detects a clip whose content is only same-colour, same-size dots and uses the cl
 outline as the area. The dot diameter and spacing identify the symbol (402 yellow dots,
 412 green, 415 black: the ISOM 2000 sizes times the map's enlargement).
 
+**A window, not the whole page.** A map page also holds a title, control descriptions,
+logos and a north arrow printed on top of the map; converted, they would become terrain.
+So the operator always picks the part to convert: a rectangle, or a polygon that follows
+the area of interest (`Scene.window`). Everything outside it is dropped in `scene.py`;
+the model keeps a rectangular plate, with a raised line along a polygon's edge.
+
 **Terrain vs objects.** Terrain classes (paved, open land, forest, buildings, water…)
 tile the map: every point has exactly one. They come from replaying the paint order.
 Objects (walls, hedges, trees) are placed on top using their own outline, so a wall
@@ -162,7 +169,7 @@ textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 | Where | Units | Origin | y axis |
 |---|---|---|---|
 | PDF / scene / compose | points (1/72 in) | page top-left | down |
-| `--crop` | mm on the PDF page | page top-left | down |
+| `--crop` (window: rectangle or polygon) | mm on the PDF page | page top-left | down |
 | model / STL / `--region` | mm on the print | model bottom-left | up |
 
 `model3d._to_model` is the one place that converts PDF points to model millimetres.

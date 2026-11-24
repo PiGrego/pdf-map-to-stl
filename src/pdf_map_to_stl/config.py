@@ -122,6 +122,7 @@ class Features:
     standard_symbols: bool = True  # trees, boulders, crosses as standard symbols; false = as drawn
     north_symbol: bool = True  # raised north symbols at the top-right and bottom-left
     legend_frames: bool = True  # raised frame around flat samples on the legend
+    window_edge: bool = True  # polygon windows: a raised line along the edge of the map
 
 
 @dataclass(frozen=True)
@@ -178,6 +179,8 @@ class Output:
     base_mm: float = 2.0  # base plate thickness
     top_skin_mm: float = 0.6  # parts export: each area owns this much of the plate under it
     north_height_mm: float = 1.0
+    window_edge_mm: float = 1.5  # width of the line along a polygon window's edge
+    window_edge_height_mm: float = 1.0
     orientation_corner_mm: float = 0.0  # cut at the top-right corner; 0 = none
     title: str = ""  # Braille title at the top left ("" = none, "auto" = file name)
     map_scale: float = 0.0  # e.g. 5000 for 1:5000; 0 = unknown (read it from the page if allowed)
@@ -203,6 +206,8 @@ class Config:
     map_scale: float = 0.0
     read_map_scale: bool = True
     north_height_mm: float = 1.0
+    window_edge_mm: float = 1.5
+    window_edge_height_mm: float = 1.0
     top_skin_mm: float = 0.6
     legend_max_height_mm: float = 200.0
     sources: list[str] = field(default_factory=list)  # config and settings files, in order
@@ -395,6 +400,8 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         map_scale=float(out.map_scale),
         read_map_scale=bool(out.read_map_scale),
         north_height_mm=float(out.north_height_mm),
+        window_edge_mm=float(out.window_edge_mm),
+        window_edge_height_mm=float(out.window_edge_height_mm),
         top_skin_mm=float(out.top_skin_mm),
         legend_max_height_mm=float(out.legend_max_height_mm),
         sources=list(sources or []),
@@ -482,6 +489,7 @@ def settings_dict(cfg: Config) -> dict:
         "output": {
             "width_mm": round(cfg.width_mm, 3) if cfg.width_mm else "auto", "base_mm": cfg.base_mm,
             "top_skin_mm": cfg.top_skin_mm, "north_height_mm": cfg.north_height_mm,
+            "window_edge_mm": cfg.window_edge_mm, "window_edge_height_mm": cfg.window_edge_height_mm,
             "orientation_corner_mm": cfg.orientation_corner_mm, "title": cfg.title, "map_scale": cfg.map_scale,
             "read_map_scale": cfg.read_map_scale, "legend_max_height_mm": cfg.legend_max_height_mm,
         },

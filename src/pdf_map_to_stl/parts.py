@@ -10,7 +10,8 @@ This module splits the model into such parts:
   up to its height, so even flat classes (paved) own the visible top of their area;
   recessed classes (water) own the floor of their recess;
 * one part per object class (walls, trees…): only the part above the ground under it;
-* one part per texture, one for the north symbols and one for the Braille dots.
+* one part per texture, one for the north symbols, one for the line along a polygon
+  window's edge, and one for the Braille dots.
 
 Parts touch but never overlap, and all share one coordinate system (mm, origin at the
 plate's bottom-left corner, z up from the table), so loaded together as one object
@@ -100,7 +101,8 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
             parts.append(Part(layer.cls.replace(" ", "_"), "texture", solid, base_z + layer.height_mm,
                               f"texture of {layer.on}"))
 
-    notes = {"north": "north symbols (the ring end points north)", "frame": "frames around flat legend samples"}
+    notes = {"north": "north symbols (the ring end points north)", "frame": "frames around flat legend samples",
+             "edge": "raised line along the edge of the map window"}
     for layer in (lyr for lyr in t.layers if lyr.role in notes):
         parts.append(Part(layer.role, layer.role, _column(layer.geom, base_z, base_z + layer.height_mm),
                           base_z + layer.height_mm, notes[layer.role]))

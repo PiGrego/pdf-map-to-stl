@@ -5,7 +5,8 @@ map for blind and visually impaired orienteers: a 3D-printable model, as one STL
 one STL per layer for the slicer, with a tactile legend. Developed by BrailleFly and
 Corifea.
 
-How it works inside: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every setting, and every
+How it works inside: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The IOF map
+specifications (ISOM, ISSprOM) are in [docs/specifications](docs/specifications). Every setting, and every
 decision the tool takes on its own: [docs/SETTINGS.md](docs/SETTINGS.md).
 
 ## Made to be read by touch
@@ -95,14 +96,20 @@ after `.venv\Scripts\activate`).
 
 ## Make a tactile map, step by step
 
-**1. Pick the area** (skip to convert the whole page)
+**1. Pick the window**
 
 ```
 pdf-map-to-stl pick "maps\my map.pdf"
 ```
 
-Open the `pick.html` it writes, drag a rectangle over the part you want (or type it in
-millimetres) and copy the command it shows.
+Open the `pick.html` it writes and draw the part of the map you want: drag a
+**rectangle**, or click the corners of a **polygon** (or type either in millimetres).
+Copy the command it shows. Pick only map: a whole page also holds the title, the
+control descriptions and logos, which would become terrain.
+
+A polygon window gives a map with the shape of the polygon: the plate stays a
+rectangle, a low raised line runs along the polygon's edge so it can be felt, and
+outside it the plate is flat (`features.window_edge`).
 
 **2. Build**
 
@@ -177,18 +184,19 @@ each entry), in `outputs\<map name>\legend\`.
 
 ```
 pdf-map-to-stl pick   MAP.pdf [--page N] [-o DIR]
-pdf-map-to-stl size   MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [--map-scale N] [settings options]
-pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [--width MM]
+pdf-map-to-stl size   MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--map-scale N] [settings options]
+pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--width MM]
                               [--map-scale N] [--scale N] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
                               [--no-textures] [--region X0,Y0,X1,Y1]
                               [--title TEXT] [--no-validate] [-o DIR]
-pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [-c CONFIG.toml]
+pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
                               [--no-textures] [--title TEXT] [-o DIR]
 ```
 
-- `--crop`: part of the PDF page, in mm from the page's top-left corner.
+- `--crop`: the window on the PDF page, in mm from the page's top-left corner: `X0,Y0,X1,Y1`
+  for a rectangle, or `X,Y` of each corner (3 or more) for a polygon.
 - `--map-scale`: the printed map's scale (e.g. `5000`); by default read from the page.
 - `--scale`: build at this tactile scale (e.g. `1000`) instead of the suggested size.
 - `--width`: printed width of the map in mm, instead of the suggested size.

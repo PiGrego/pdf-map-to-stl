@@ -1,6 +1,6 @@
 """Command line.
 
-    pdf-map-to-stl pick   MAP.pdf             choose the area to convert (writes pick.html)
+    pdf-map-to-stl pick   MAP.pdf             choose the window to convert: rectangle or polygon (pick.html)
     pdf-map-to-stl build  MAP.pdf [options]   convert to STL: one body + one STL per layer,
                                               legend, description, tuner.html, previews
     pdf-map-to-stl legend MAP.pdf [options]   stand-alone tactile legend of every symbol in a map
@@ -28,6 +28,21 @@ def _rect(text: str) -> tuple[float, float, float, float]:
     return (x0, y0, x1, y1)
 
 
+def _window(text: str) -> tuple[float, ...]:
+    """--crop: four numbers are a rectangle (two corners), six or more a polygon."""
+    try:
+        v = tuple(float(x) for x in text.replace(";", ",").split(",") if x.strip())
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("expected numbers separated by commas") from e
+    if len(v) != 4 and (len(v) < 6 or len(v) % 2):
+        raise argparse.ArgumentTypeError("expected x0,y0,x1,y1 (a rectangle) or x,y of 3 or more points (a polygon)")
+    return v
+
+
+WINDOW_HELP = ("the window to convert, mm from the page's top-left corner: X0,Y0,X1,Y1 for a rectangle, "
+               "or X,Y of each corner of a polygon (3 or more points); get it from pick.html")
+
+
 def _default_out(pdf: Path) -> Path:
     return Path("outputs") / pdf.stem.replace(" ", "_")
 
@@ -53,7 +68,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="pdf-map-to-stl", description="Vector orienteering map PDF -> tactile STL.")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("pick", help="open the map page to choose the area to convert")
+    p = sub.add_parser("pick", help="open the map page to choose the window to convert (rectangle or polygon)")
     p.add_argument("pdf", type=Path)
     p.add_argument("--page", type=int, default=0, help="page number, from 0")
     p.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>)")
@@ -61,8 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     b = sub.add_parser("build", help="convert the map (or a part of it) to STL")
     b.add_argument("pdf", type=Path)
     b.add_argument("--page", type=int, default=0, help="page number, from 0")
-    b.add_argument("--crop", type=_rect, metavar="X0,Y0,X1,Y1",
-                   help="part of the PDF page to convert, mm from its top-left corner (get it from pick.html)")
+    b.add_argument("--crop", type=_window, metavar="X0,Y0,X1,Y1[,...]", help=WINDOW_HELP)
     b.add_argument("--width", type=float, metavar="MM",
                    help="printed map width (default: the suggested size, from the map's details)")
     _settings_args(b)
@@ -81,14 +95,15 @@ def main(argv: list[str] | None = None) -> None:
     z = sub.add_parser("size", help="suggested print size of a map or part of it (quick, builds nothing)")
     z.add_argument("pdf", type=Path)
     z.add_argument("--page", type=int, default=0, help="page number, from 0")
-    z.add_argument("--crop", type=_rect, metavar="X0,Y0,X1,Y1", help="part of the PDF page, mm from its top-left corner")
+    z.add_argument("--crop", type=_window, metavar="X0,Y0,X1,Y1[,...]", help=WINDOW_HELP)
     z.add_argument("--map-scale", type=float, metavar="N", help="scale of the printed map (default: read from the page)")
     _settings_args(z)
 
     g = sub.add_parser("legend", help="stand-alone tactile legend with every tactile symbol found in a map")
     g.add_argument("pdf", type=Path)
     g.add_argument("--page", type=int, default=0, help="page number, from 0")
-    g.add_argument("--crop", type=_rect, metavar="X0,Y0,X1,Y1", help="only symbols in this part of the page")
+    g.add_argument("--crop", type=_window, metavar="X0,Y0,X1,Y1[,...]",
+                   help="only symbols in this window (rectangle or polygon, as for build)")
     _settings_args(g)
     g.add_argument("--title", default="key", metavar="TEXT", help='Braille title of the legend (default "key")')
     g.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>/legend)")
@@ -122,9 +137,9 @@ def _run(a: argparse.Namespace) -> None:
 
     if a.command == "pick":
         write_picker(a.pdf, out / "pick.html", a.page)
-        print(f"Area picker written to {out / 'pick.html'}.")
-        print("Open it in a browser, choose the area by dragging or by typing it in millimetres,")
-        print("then run the command it shows.")
+        print(f"Window picker written to {out / 'pick.html'}.")
+        print("Open it in a browser and draw the window: drag a rectangle, or click the corners of a polygon,")
+        print("or type it in millimetres; then run the command it shows.")
         return
 
     r = build(BuildOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.width, a.region,

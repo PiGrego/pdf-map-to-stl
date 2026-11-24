@@ -98,6 +98,7 @@ title and lets the suggestion use round scales.
 | `standard_symbols` | `true` | trees, boulders and man-made objects drawn as standard tactile symbols (dot, ring, cross); `false` = as drawn on the map |
 | `north_symbol` | `true` | raised north symbols at the top-right and bottom-left corners |
 | `legend_frames` | `true` | a raised frame around flat samples (paved) on the legend, so they can be found |
+| `window_edge` | `true` | polygon windows: a raised line just outside the polygon, so the edge of the map can be felt (outside it the plate is flat, like paved ground) |
 
 ### `[class.NAME]`: each tactile class
 
@@ -230,6 +231,7 @@ read the maps, using test tiles.
 | `base_mm` | `2.0` | base plate thickness; recesses always leave 0.4 mm of plate |
 | `top_skin_mm` | `0.6` | per-layer parts: each area owns this much of the plate under it |
 | `north_height_mm` | `1.0` | height of the north symbols |
+| `window_edge_mm`, `window_edge_height_mm` | `1.5`, `1.0` | width and height of the line along a polygon window's edge |
 | `orientation_corner_mm` | `0` | cut off the top-right corner of the plate by this much |
 | `title` | `"auto"` | Braille title at the top left: `"auto"` = the file name, `""` = none |
 | `map_scale` | `0` | scale of the printed map (or `--map-scale`); 0 = unknown |

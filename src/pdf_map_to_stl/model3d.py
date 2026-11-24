@@ -110,6 +110,8 @@ def build_layers(
     scale = cfg.width_mm / m.scene.width_pt
     w, h = cfg.width_mm, m.scene.height_pt * scale
     frame = box(0, 0, w, h)
+    if m.scene.is_polygon:  # a polygon window: the map stops at its edge
+        frame = frame.intersection(_to_model(m.scene.window, rect, scale))
     if region is not None:
         frame = frame.intersection(box(*region))
         if frame.is_empty:
@@ -154,6 +156,13 @@ def build_layers(
                 z0 = layer.height_mm if layer.height_mm >= 0 else -recess_depth(layer.height_mm, cfg.base_mm)
                 layers.append(Layer(f"{layer.cls} texture", "texture", z0 + pattern.height_mm, tex,
                                     z0_mm=z0, on=layer.cls))
+    if m.scene.is_polygon and cfg.features.window_edge:
+        # A raised line just outside a polygon window, so the edge of the map can be felt
+        # (outside it the plate is flat, like paved ground).
+        inside = affinity.translate(frame, -x0, -y0 + bottom)
+        band = inside.buffer(cfg.window_edge_mm, 4).difference(inside).intersection(box(0, bottom, w, bottom + h))
+        if not band.is_empty:
+            layers.append(Layer("edge", "edge", cfg.window_edge_height_mm, band))
     if north:
         glyphs = unary_union([
             north_symbol(w - EDGE_PAD_MM - NORTH_W_MM / 2 - c, total_h - EDGE_PAD_MM),

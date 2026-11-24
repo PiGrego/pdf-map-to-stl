@@ -27,7 +27,7 @@ from .model3d import TactileModel, build_layers, build_solid, layer_summary, wri
 from .parts import build_parts, write_parts
 from .preview import check_image, relief_image
 from .report import symbol_inventory, write_csv, write_json, write_layers_svg
-from .scene import PT_TO_MM, load_scene, read_map_scale
+from .scene import PT_TO_MM, Window, load_scene, read_map_scale
 from .size import SizeSuggestion, describe_size, suggest_size
 from .tactile_check import check_model
 from .tuner import write_tuner
@@ -56,7 +56,7 @@ class BuildOptions:
     config: Path | None = None  # symbol rules + classes; default config/default.toml
     heights: Path | None = None  # heights.toml from the tuner (same as a settings file)
     page: int = 0
-    crop_mm: Rect | None = None  # part of the PDF page, mm from its top-left corner
+    crop_mm: Window | None = None  # window on the PDF page (rectangle or polygon), mm from its top-left
     width_mm: float | None = None  # printed map width; overrides the config and the suggested size
     region_mm: Rect | None = None  # test tile on the map, mm from its bottom-left corner
     title: str | None = None  # Braille title; None = from config ("auto" = file name)
@@ -65,6 +65,14 @@ class BuildOptions:
     validate: bool = True
     settings: tuple = ()  # settings files or profile names, applied in order after the config
     overrides: tuple = ()  # "section.key=value" strings, applied last
+
+
+def describe_window(crop_mm) -> str:
+    """The window in words, for the description."""
+    v = [f"{x:g}" for x in crop_mm]
+    if len(v) == 4:
+        return f"window {v[0]} to {v[2]} mm across and {v[1]} to {v[3]} mm down the page"
+    return f"polygon window of {len(v) // 2} points (mm from the page's top-left: {','.join(v)})"
 
 
 def resolve_title(option: str | None, config_title: str, pdf: Path) -> str:
@@ -177,7 +185,7 @@ def build(o: BuildOptions) -> dict:
 
     # 7. Things to read and look at.
     colours = class_colours(cfg, m.background_class)
-    source = f"{o.pdf.name}, page {o.page + 1}" + (f", area {o.crop_mm} mm" if o.crop_mm else "")
+    source = f"{o.pdf.name}, page {o.page + 1}" + (f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
     write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines),
                       o.out / "description.txt")
     relief_image(t, colours).save(o.out / "relief_preview.png")
@@ -230,7 +238,7 @@ def build(o: BuildOptions) -> dict:
     return report
 
 
-def suggest(pdf: Path, page: int = 0, crop_mm: Rect | None = None, config: Path | None = None,
+def suggest(pdf: Path, page: int = 0, crop_mm: Window | None = None, config: Path | None = None,
             settings: tuple = (), overrides: tuple = (), map_scale: float | None = None) -> tuple[SizeSuggestion, list[str]]:
     """Only the suggested size of a map (or part of it), without building: quick."""
     cfg = load_config(config, None, settings, overrides)
@@ -247,7 +255,7 @@ class LegendOptions:
     config: Path | None = None
     heights: Path | None = None
     page: int = 0
-    crop_mm: Rect | None = None
+    crop_mm: Window | None = None
     title: str = DEFAULT_TITLE
     settings: tuple = ()
     overrides: tuple = ()

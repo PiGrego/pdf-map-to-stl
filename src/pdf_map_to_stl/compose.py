@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -90,8 +90,7 @@ def build_map(scene: Scene, cfg: Config, background_class: str = "forest") -> Ma
     """Classify the scene and compose the visible terrain. Unpainted paper counts as
     ``background_class`` (white = forest in ISOM)."""
     items = classify(scene, cfg)
-    page = box(*scene.page_rect)
-    terrain = visible_terrain(items, page, background_class)
+    terrain = visible_terrain(items, scene.area, background_class)
     objects: dict[str, list[Primitive]] = defaultdict(list)
     for c in items:
         if c.role == "object":

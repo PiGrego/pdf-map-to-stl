@@ -132,6 +132,9 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
 
     lines += ["", "HOW TO HOLD IT"]
     hold = ["North is up."]
+    if any(lyr.role == "edge" for lyr in t.layers):
+        hold.append("The map has the shape of the chosen window; a low raised line runs along its edge, "
+                    "and outside it the plate is flat.")
     if any(lyr.role == "north" for lyr in t.layers):
         hold.append("North symbols are at the top-right and bottom-left corners; their ring end points north.")
     if t.corner_mm:
