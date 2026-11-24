@@ -51,7 +51,7 @@ def _examples(spots: list[Polygon]) -> list[list[float]]:
 
 
 def _texture_key(cfg: Config, cls: str):
-    tex = cfg.classes[cls].texture if cls in cfg.classes else None
+    tex = cfg.texture(cls)
     return None if tex is None else (tex.kind, tex.pitch_mm, tex.size_mm, tex.angle_deg)
 
 

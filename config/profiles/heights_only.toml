@@ -1,0 +1,20 @@
+# Profile: only heights. Every area smooth (no textures), shapes as drawn on the map, no
+# rounding and no automatic generalisation: the model is the map, raised by class, and
+# everything else is up to you in the slicer.
+# The tactile check will report more problems: parts may be too thin or too close to feel.
+# Use with: pdf-map-to-stl build MAP.pdf --settings heights_only
+
+[features]
+textures = false
+standard_symbols = false
+
+[smoothing]
+line_join = "mitre"
+line_cap = "flat"
+
+[generalize]
+clean_slivers = false
+open_passages = false
+widen_thin = false
+merge_close_objects = false
+widen_objects = false

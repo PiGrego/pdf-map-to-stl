@@ -2,12 +2,15 @@
 
 Each terrain class and object class becomes a *layer*: its 2D shape in millimetres
 plus a height. Some classes also get a *texture* layer (raised dots or ridges on top),
-so classes at the same height can still be told apart by touch. The model also carries
-what a blind reader needs to use it without help:
+so classes at the same height can still be told apart by touch (``features.textures``
+switches all textures off). Line objects (walls) are redrawn along their centre line at
+least ``min_width_mm`` wide, with the ends and corners set in ``[smoothing]``; point
+objects (trees) become standard symbols (``shape``, ``features.standard_symbols``).
+The model also carries what a blind reader needs to use it without help:
 
-* an **orientation corner**: the top-right corner of the plate is cut off, so the
-  reader always knows which way is up (north);
-* a **Braille title** along the bottom edge, at standard Braille size (never scaled).
+* **north symbols** at the top-right and bottom-left corners (``features.north_symbol``),
+  and optionally a cut top-right corner (``output.orientation_corner_mm``);
+* a **Braille title** (and scale) at the top left, at standard Braille size (never scaled).
 
 The solid is the base plate, plus every raised layer extruded on top of it, minus every
 recessed layer cut into it, plus the Braille dots, merged by ``manifold3d`` so the result
@@ -60,7 +63,7 @@ class TactileModel:
     base_mm: float
     scale: float  # model mm per PDF pt
     layers: list[Layer]
-    plate: BaseGeometry  # outline of the base plate (with the orientation corner cut)
+    plate: BaseGeometry  # outline of the base plate (with the optional cut corner)
     map_box: tuple[float, float, float, float]  # where the map sits on the plate
     braille_dots: list[tuple[float, float]] = field(default_factory=list)
     braille_spec: braille.BrailleSpec = field(default_factory=braille.BrailleSpec)
@@ -119,7 +122,7 @@ def build_layers(
 
     # Margins: top (title + north symbol), bottom (north symbol). Not on test tiles.
     spec = cfg.braille
-    north = cfg.north_symbol and region is None
+    north = cfg.features.north_symbol and region is None
     title = "" if region is not None else (title or "")
     room = w - 2 * EDGE_PAD_MM - (NORTH_W_MM + EDGE_PAD_MM if north else 0)
     lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
@@ -142,12 +145,12 @@ def build_layers(
 
     # Textures on top of the classes that have one (on the floor of recessed ones).
     for layer in list(layers):
-        tc = cfg.classes.get(layer.cls)
-        if tc and tc.texture:
-            tex = texture_geometry(layer.geom, tc.texture)
+        pattern = cfg.texture(layer.cls)
+        if pattern is not None:
+            tex = texture_geometry(layer.geom, pattern)
             if not tex.is_empty:
                 z0 = layer.height_mm if layer.height_mm >= 0 else -recess_depth(layer.height_mm, cfg.base_mm)
-                layers.append(Layer(f"{layer.cls} texture", "texture", z0 + tc.texture.height_mm, tex,
+                layers.append(Layer(f"{layer.cls} texture", "texture", z0 + pattern.height_mm, tex,
                                     z0_mm=z0, on=layer.cls))
     if north:
         glyphs = unary_union([
@@ -190,8 +193,8 @@ def _generalize(layers: list[Layer], cfg: Config):
     objects = {lyr.cls: lyr.geom for lyr in layers if lyr.role == "object"}
     terrain, objects, report = generalize(terrain, heights, objects, cfg)
     # Generalising can leave hairline pieces; nothing that small can be printed or felt.
-    out = [Layer(c, "terrain", heights[c], _drop_small(g, cfg.min_area_mm2)) for c, g in sorted(terrain.items())]
-    out += [Layer(c, "object", heights[c], _drop_small(g, cfg.min_area_mm2)) for c, g in sorted(objects.items())]
+    out = [Layer(c, "terrain", heights[c], _drop_small(g, cfg.generalize.min_area_mm2)) for c, g in sorted(terrain.items())]
+    out += [Layer(c, "object", heights[c], _drop_small(g, cfg.generalize.min_area_mm2)) for c, g in sorted(objects.items())]
     return [lyr for lyr in out if not lyr.geom.is_empty], report
 
 
@@ -214,29 +217,34 @@ def _map_layers(m: MapModel, cfg: Config, rect, scale: float, frame: BaseGeometr
         tc = cfg.classes.get(cls)
         if tc is None or tc.role != "terrain":
             continue
-        mg = _drop_small(_to_model(g, rect, scale).intersection(frame), cfg.min_area_mm2)
+        mg = _drop_small(_to_model(g, rect, scale).intersection(frame), cfg.generalize.min_area_mm2)
         if not mg.is_empty:
             layers.append(Layer(cls, "terrain", tc.height_mm, mg))
+    sm, widen = cfg.smoothing, cfg.generalize.widen_objects
     for cls, prims in sorted(m.objects.items()):
         tc = cfg.classes[cls]
+        shape = cfg.shape(cls)
         parts = []
         for p in prims:
-            if tc.shape:
+            if shape:
                 # A standard tactile symbol at the centre of each drawn instance.
                 src = unary_union(p.lines) if p.kind == "stroke" and p.lines else p.geom
                 c = _to_model(src.centroid, rect, scale)
-                parts.append(standard_symbol(tc.shape, c.x, c.y, tc.size_mm, tc.min_width_mm))
+                parts.append(standard_symbol(shape, c.x, c.y, tc.size_mm, tc.min_width_mm))
             elif p.kind == "stroke" and p.lines:
-                # Re-stroke the centreline at a width that can be felt and printed.
-                width = max(p.width_mm / PT_TO_MM * scale, tc.min_width_mm)
+                # Redraw the line along its centre, at a width that can be felt and printed.
+                width = p.width_mm / PT_TO_MM * scale
+                if widen:
+                    width = max(width, tc.min_width_mm)
                 lines = [_to_model(ln, rect, scale) for ln in p.lines]
-                parts.extend(ln.buffer(width / 2, cap_style="round", join_style="round") for ln in lines)
+                parts.extend(ln.buffer(width / 2, quad_segs=sm.arc_segments, cap_style=sm.line_cap,
+                                       join_style=sm.line_join) for ln in lines)
             else:
                 g = _to_model(p.geom, rect, scale)
                 minx, miny, maxx, maxy = g.bounds
                 short = min(maxx - minx, maxy - miny)
-                if short < tc.min_width_mm:
-                    g = g.buffer((tc.min_width_mm - short) / 2)
+                if widen and short < tc.min_width_mm:
+                    g = g.buffer((tc.min_width_mm - short) / 2, quad_segs=sm.arc_segments)
                 parts.append(g)
         mg = unary_union(parts).intersection(frame) if parts else Polygon()
         if not mg.is_empty:

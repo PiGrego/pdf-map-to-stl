@@ -66,11 +66,13 @@ def _sample(cls: str, cfg: Config, x0: float, cy: float):
     if tc.role == "terrain":
         swatch = box(x0, cy - SWATCH_H_MM / 2, x0 + SWATCH_W_MM, cy + SWATCH_H_MM / 2)
         frame = None
-        if tc.height_mm == 0:
+        if tc.height_mm == 0 and cfg.features.legend_frames:
             frame = swatch.buffer(FRAME_MM, join_style="mitre").difference(swatch)
         return swatch, frame
     if tc.shape:
-        return standard_symbol(tc.shape, x0 + SWATCH_W_MM / 2, cy, tc.size_mm, tc.min_width_mm), None
+        # A point symbol; drawn as a plain dot when standard symbols are switched off.
+        shape = cfg.shape(cls) or "dot"
+        return standard_symbol(shape, x0 + SWATCH_W_MM / 2, cy, tc.size_mm, tc.min_width_mm), None
     width = max(tc.min_width_mm, 1.0)
     return box(x0, cy - width / 2, x0 + SWATCH_W_MM, cy + width / 2), None
 
@@ -108,11 +110,12 @@ def build_legend(classes: list[str], cfg: Config, title: str = DEFAULT_TITLE) ->
         tc = cfg.classes[cls]
         geom = unary_union(samples[cls])
         layers.append(Layer(cls, tc.role, tc.height_mm, geom))
-        if tc.texture:
-            tex = texture_geometry(geom, tc.texture)
+        pattern = cfg.texture(cls)
+        if pattern is not None:
+            tex = texture_geometry(geom, pattern)
             if not tex.is_empty:
                 z0 = tc.height_mm if tc.height_mm >= 0 else -recess_depth(tc.height_mm, cfg.base_mm)
-                layers.append(Layer(f"{cls} texture", "texture", z0 + tc.texture.height_mm, tex, z0_mm=z0, on=cls))
+                layers.append(Layer(f"{cls} texture", "texture", z0 + pattern.height_mm, tex, z0_mm=z0, on=cls))
     if frames:
         layers.append(Layer("frame", "frame", FRAME_HEIGHT_MM, unary_union(frames)))
     r = spec.dot_diameter_mm / 2
@@ -137,15 +140,20 @@ def _layout(n: int, cfg: Config, title: str) -> tuple[list[str], float, int, int
 def feel(cfg: Config, cls: str) -> str:
     """How a class feels, in words."""
     tc = cfg.classes[cls]
-    tex = f", with {tc.texture.describe()}" if tc.texture else ", smooth"
+    pattern = cfg.texture(cls)
+    tex = f", with {pattern.describe()}" if pattern else ", smooth"
     if tc.role == "object":
-        shape = {"dot": "a round dot", "ring": "a small ring", "cross": "a cross"}.get(tc.shape, "a ridge")
-        size = f" {tc.size_mm:g} mm across" if tc.shape else f" at least {tc.min_width_mm:g} mm wide"
-        return f"{shape}{size}, {tc.height_mm:g} mm high"
+        shape = cfg.shape(cls)
+        if tc.shape and not shape:
+            return f"as drawn on the map, at least {tc.min_width_mm:g} mm wide, {tc.height_mm:g} mm high"
+        name = {"dot": "a round dot", "ring": "a small ring", "cross": "a cross"}.get(shape, "a ridge")
+        size = f" {tc.size_mm:g} mm across" if shape else f" at least {tc.min_width_mm:g} mm wide"
+        return f"{name}{size}, {tc.height_mm:g} mm high"
     if tc.height_mm < 0:
         return f"recessed {-tc.height_mm:g} mm{tex}"
     if tc.height_mm == 0:
-        return f"flat, at plate level{tex} (framed on the legend)"
+        framed = " (framed on the legend)" if cfg.features.legend_frames else ""
+        return f"flat, at plate level{tex}{framed}"
     return f"raised {tc.height_mm:g} mm{tex}"
 
 

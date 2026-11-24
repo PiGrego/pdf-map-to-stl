@@ -37,10 +37,11 @@ def class_colours(cfg: Config, background: str) -> dict[str, tuple[int, int, int
 
 
 def rule_colours(cfg: Config) -> dict[str, set[tuple[int, int, int]]]:
-    """Every PDF colour that a class can come from (for comparing with the rendered PDF)."""
+    """Every PDF colour that a class on the model can come from (for comparing with the
+    rendered PDF); a class switched off counts as the class it is shown as."""
     out: dict[str, set[tuple[int, int, int]]] = {}
     for r in cfg.rules:
-        out.setdefault(r.cls, set()).add(r.rgb)
+        out.setdefault(cfg.shown_as(r.cls) or r.cls, set()).add(r.rgb)
     return out
 
 

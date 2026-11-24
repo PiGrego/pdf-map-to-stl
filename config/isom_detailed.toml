@@ -13,10 +13,12 @@
 [output]
 width_mm = 120.0          # printed model width; the crop is scaled to this
 base_mm = 2.0             # base plate thickness
-min_area_mm2 = 0.4        # terrain pieces smaller than this are dropped (untouchable)
 orientation_corner_mm = 8.0  # the top-right corner is cut off so the reader finds "up"; 0 = no cut
-title = "auto"            # Braille title along the bottom edge: "auto" = map file name, "" = none
+title = "auto"            # Braille title at the top left: "auto" = map file name, "" = none
 map_scale = 0             # map scale denominator (e.g. 4000) for the text description; 0 = unknown
+
+# Generalisation, smoothing and features keep their defaults (see config/default.toml
+# and docs/SETTINGS.md); add [generalize], [smoothing] or [features] here to change them.
 
 # ---------------------------------------------------------------- tactile rules
 # Thresholds for the tactile check (tactile_check.png, description.txt). Starting values
@@ -26,12 +28,6 @@ min_feature_mm = 1.0      # raised parts narrower than this are hard to feel
 min_gap_mm = 3.0          # raised parts closer than this feel like one
 min_height_step_mm = 0.5  # height differences smaller than this are hard to notice
 min_symbol_area_mm2 = 9.0 # isolated areas smaller than this are hard to identify
-# Tactile generalisation done automatically before the check (see generalize.py):
-sliver_mm = 0.4           # terrain strips narrower than this are drawing artefacts: absorbed
-clean_slivers = true      # give artefact strips to their neighbour
-open_passages = true      # widen passages between raised areas to min_gap_mm
-widen_thin = true         # widen raised areas narrower than min_feature_mm
-merge_close_objects = true # merge walls/hedges closer than min_gap_mm (not classes with merge_gaps = false)
 
 # ---------------------------------------------------------------- Braille
 # Physical size of Braille dots; never scaled with the map.

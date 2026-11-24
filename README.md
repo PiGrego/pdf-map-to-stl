@@ -5,7 +5,8 @@ map for blind and visually impaired orienteers: a 3D-printable model, as one STL
 one STL per layer for the slicer, with a tactile legend. Developed by BrailleFly and
 Corifea.
 
-How it works inside: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+How it works inside: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every setting, and every
+decision the tool takes on its own: [docs/SETTINGS.md](docs/SETTINGS.md).
 
 ## Made to be read by touch
 
@@ -16,7 +17,7 @@ full ISOM / ISSprOM set.
 
 | Tactile symbol | How it feels (default) | From map symbols |
 |---|---|---|
-| paved area | flat, smooth | paved areas, canopy |
+| paved area | flat, smooth | paved areas, canopy (canopy can be switched on as its own class) |
 | open land | raised 0.5 mm, dots | 401, 402, 403, 412, 415 |
 | forest | raised 1 mm, small rings | 405, 406, 408 |
 | forbidden area | raised 1.5 mm, diagonal ridges | 520 out of bounds, 410 impassable vegetation |
@@ -27,8 +28,9 @@ full ISOM / ISSprOM set.
 | man-made object | cross, 3.5 mm | the black × objects |
 | boulder | ring, 3 mm | (no rule yet) |
 
-Footpaths, contours, the course and other symbols with no tactile use are left out.
-For a richer set with more classes, build with `-c config/isom_detailed.toml`.
+Footpaths and contours are switched off (they can be switched on), and the course and
+other symbols with no tactile use are left out. For a richer set with more classes,
+build with `-c config/isom_detailed.toml`.
 
 Every model also has:
 
@@ -38,11 +40,30 @@ Every model also has:
 - **A tactile legend** (`legend.stl`) with one sample of every symbol used, each with
   its name in Braille. Flat symbols get a raised frame so they can be found.
 - **Tactile generalisation:** drawing artefacts removed, passages narrower than 3 mm
-  widened, areas narrower than 1 mm widened, walls closer than 3 mm merged.
+  widened, areas narrower than 1 mm widened, walls closer than 3 mm merged. Walls are
+  redrawn along their centre line at least 1 mm wide, with round ends and corners.
 - **A tactile check** of what is still too thin, too close or too similar to feel,
   with locations (`description.txt`, `tactile_check.png`).
 - **A plain-text description** (`description.txt`): how to hold the model, the legend
-  in words, the scale, the check results.
+  in words, the scale, every automatic change, the check results.
+
+## Everything is a setting
+
+Each of these choices has a default you can change for one build, without editing the
+config: textures on or off (all of them, or per class), which texture goes on which
+area, standard symbols or shapes as drawn, round or sharp corners, how much smoothing,
+each generalisation step, and which classes are shown (canopy, footpaths, contours).
+
+```
+pdf-map-to-stl build MAP.pdf --settings no_textures           all areas smooth: texture them in the slicer
+pdf-map-to-stl build MAP.pdf --settings heights_only          only heights; shapes as drawn on the map
+pdf-map-to-stl build MAP.pdf --set class.canopy.enabled=true  show canopy (portici, galleries)
+```
+
+`tuner.html` does the same with switches and a 3D view. Each build writes
+`settings_used.toml` with every value it used. All settings: [docs/SETTINGS.md](docs/SETTINGS.md).
+
+## Scale
 
 The guidebook recommends **1:500 to 1:1000 on A4**; build with `--map-scale` (the printed
 map's scale) and `--scale 1000`. The thresholds (1 mm features, 3 mm gaps, 0.5 mm height
@@ -86,10 +107,11 @@ pdf-map-to-stl build "maps\my map.pdf" --crop 14.6,14.6,27.8,24.1 --map-scale 50
 | `model.stl` | the tactile map as one body (one-material prints) |
 | `parts\*.stl` | the same map, one STL per layer: see **Printing** below |
 | `legend.stl`, `legend_parts\*.stl` | the tactile legend, as one body and per layer |
-| `description.txt` | how to hold it, the legend in words, scale, tactile check |
+| `description.txt` | how to hold it, the legend in words, scale, every automatic change, tactile check |
+| `settings_used.toml` | every setting used; `--settings settings_used.toml` builds the same model again |
 | `tactile_check.png` | where the model is still too thin, too close or too similar to feel |
 | `relief_preview.png`, `legend_preview.png` | quick look at the models |
-| `tuner.html` | heights of every layer and the base, with a 3D view |
+| `tuner.html` | heights, on/off, textures and shapes of every layer, with a 3D view |
 | `symbols.csv` | every map symbol found and what it became; **check this for a new map** |
 | `validation_errors.png` | red = model disagrees with the PDF, grey = not checked |
 | `classes.png`, `layers.svg`, `report.json` | details |
@@ -101,8 +123,10 @@ width, dot pattern) and the class it was given. If a row says `unclassified`, or
 symbol got the wrong class, copy `config\default.toml` to e.g. `config\my_map.toml`,
 fix the `[[symbol]]` rules there, and build again with `-c config\my_map.toml`.
 
-**4. Tune the heights** in `tuner.html` (fields or sliders; it warns when two areas
-would feel the same), download `heights.toml` and build again with `--heights heights.toml`.
+**4. Tune** in `tuner.html`: per layer, whether it is shown, its height, and its texture
+or symbol shape; textures and standard symbols on or off for the whole model. It warns
+when two areas would feel the same. Download `settings.toml` into the project folder and
+run the build command the page shows (it adds `--settings settings.toml`).
 
 **5. Print a test tile first:** in `tuner.html`, type a rectangle under **Test tile**:
 it gives a command with `--region` that builds only that piece. Have it read by touch,
@@ -143,10 +167,12 @@ each entry), in `outputs\<map name>\legend\`.
 pdf-map-to-stl pick   MAP.pdf [--page N] [-o DIR]
 pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [--width MM]
                               [--map-scale N] [--scale N] [-c CONFIG.toml]
-                              [--heights HEIGHTS.toml] [--region X0,Y0,X1,Y1]
+                              [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
+                              [--no-textures] [--region X0,Y0,X1,Y1]
                               [--title TEXT] [--no-validate] [-o DIR]
 pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [-c CONFIG.toml]
-                              [--heights HEIGHTS.toml] [--title TEXT] [-o DIR]
+                              [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
+                              [--no-textures] [--title TEXT] [-o DIR]
 ```
 
 - `--crop`: part of the PDF page, in mm from the page's top-left corner.
@@ -155,6 +181,10 @@ pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1] [-c CONFIG.toml]
 - `--width`: printed width of the map in mm, instead of `--scale`.
 - `--region`: part of the *map* on the model, in mm from its bottom-left corner (test tiles).
 - `--title`: Braille title (default: the file name; `--title ""` for none).
+- `--settings`: a settings file or a profile (`no_textures`, `as_drawn`, `heights_only`);
+  repeatable, applied in order. `--heights` still works for old tuner files.
+- `--set`: change one setting, e.g. `--set smoothing.line_join=mitre`; repeatable, applied last.
+- `--no-textures`: every area smooth.
 
 ## Development
 

@@ -1,0 +1,216 @@
+# Settings
+
+Every choice the tool makes on its own is a setting with a default. This page lists them
+all: what each one does, its default, and how to change it.
+
+## How to change a setting
+
+The defaults live in `config/default.toml`. You rarely need to edit it; instead, change
+values for one build:
+
+| How | Example | Use it for |
+|---|---|---|
+| a profile | `--settings no_textures` | a ready-made set of changes (below) |
+| a settings file | `--settings my_settings.toml` | your own set of changes; only the values you want to change |
+| one value | `--set class.canopy.enabled=true` | trying one change |
+| the tuner | `tuner.html` → `settings.toml` | heights, switches, textures and shapes, with a 3D view |
+
+They are applied in order: the config file, then each `--settings` (in the order given),
+then each `--set`. A later value wins. `--settings` and `--set` can be repeated.
+
+A settings file looks like the config, with only the values you change:
+
+```toml
+[features]
+textures = false
+
+[class.canopy]
+enabled = true
+height_mm = 0.3
+```
+
+Every build writes **`settings_used.toml`**: all the values it used, and in what order
+they were applied. Build the same model again with `--settings settings_used.toml`.
+**`description.txt`** has an *Automatic changes* section: what the tool changed on this
+map (how many passages it widened, which symbols it merged…) and the setting behind each.
+
+A misspelt setting or an unknown class is an error that names the known values; it is
+never silently ignored. `--no-textures` is a shortcut for `--set features.textures=false`.
+
+### Profiles (`config/profiles/`)
+
+| Profile | What it changes |
+|---|---|
+| `no_textures` | every area smooth; classes differ only by height (texture them in the slicer) |
+| `as_drawn` | shapes as close to the map as possible: no standard symbols, drawn line widths, sharp corners and flat ends, no generalisation; textures stay |
+| `heights_only` | both of the above: only heights, everything else as on the map |
+
+With `as_drawn` and `heights_only` the tactile check reports more problems: parts may be
+too thin or too close to feel. Add your own profile by putting a `.toml` file in
+`config/profiles/`.
+
+## The settings
+
+### `[features]`: what the model contains
+
+| Setting | Default | What it does |
+|---|---|---|
+| `textures` | `true` | raised patterns on areas; `false` = every area smooth |
+| `standard_symbols` | `true` | trees, boulders and man-made objects drawn as standard tactile symbols (dot, ring, cross); `false` = as drawn on the map |
+| `north_symbol` | `true` | raised north symbols at the top-right and bottom-left corners |
+| `legend_frames` | `true` | a raised frame around flat samples (paved) on the legend, so they can be found |
+
+### `[class.NAME]`: each tactile class
+
+| Setting | What it does |
+|---|---|
+| `enabled` | `false` = not on the model. A ground class that is off gives its area to `merge_into` (without one, what is painted under it on the map shows instead); an object class that is off is left out |
+| `merge_into` | the ground class that takes the area of this class when it is off |
+| `role` | `terrain` (areas that tile the map), `object` (on top) or `ignore` (never shown) |
+| `height_mm` | top above the base plate; negative = recessed into it |
+| `texture` | a name from the texture library, `"none"`, or an inline table |
+| `shape` | objects: `dot`, `ring` or `cross` draws every instance as that standard symbol of `size_mm`; `as_drawn` keeps the shape on the map |
+| `size_mm` | size of the standard symbol |
+| `min_width_mm` | objects: lines and small objects are widened to at least this (see `generalize.widen_objects`) |
+| `merge_gaps` | objects: `false` keeps close instances apart (trees) |
+| `label` | the Braille label on the legend (short, no accents) |
+| `colour` | `[r, g, b]` for previews and the suggested filament colour of the part |
+
+The default classes and how they feel:
+
+| Class | Default | Map symbols | On? |
+|---|---|---|---|
+| paved | flat, smooth | 501 paved area (two colours) | on |
+| open land | raised 0.5 mm, dots | 401, 402, 403, 412, 415 | on |
+| forest | raised 1 mm, small rings | 405 (white, and unpainted paper), 406, 408 | on |
+| forbidden | raised 1.5 mm, diagonal ridges | 520 out of bounds, 410 impassable vegetation | on |
+| building | raised 3 mm, smooth | 521 | on |
+| water | recessed 0.8 mm, wavy ridges | water | on |
+| **canopy** | off: shown as paved. On: flat, fine east-west stripes | 522 canopy (portici, galleries) | **off** |
+| barrier | 3.5 mm high, at least 1 mm wide | walls, fences, impassable hedges, black filled walls | on |
+| tree | 2.5 mm dot, 2.5 mm high | green dots and green rings | on |
+| man-made object | 3.5 mm cross, 2.5 mm high | the black × | on |
+| boulder | 3 mm ring | (no rule matches it yet) | on |
+| **footpath** | off. On: a raised line 2 mm high, its dashes joined | 505 footpath | **off** |
+| **contour** | off. On: low ridges 1.8 mm high | 101 contour | **off** |
+
+Never shown (role `ignore`): thin black outlines of buildings and areas, dotted lines,
+small black dots around vegetation, green vegetation lines, the course overprint, north
+lines, grey lines, and anything no rule recognises. To show one of these, give it a role
+and a height in a copy of the config.
+
+Examples:
+
+```
+--set class.canopy.enabled=true                 canopy on, with its stripes
+--set class.canopy.texture=none                 ...or smooth
+--set class.canopy.height_mm=0.3                ...or slightly raised
+--set class.footpath.enabled=true               footpaths as raised lines
+--set class.tree.shape=ring                     trees as rings
+--set class.forest.texture=dots                 forest with the open-land dots
+```
+
+### `[texture.NAME]`: the texture library
+
+| Texture | Kind | Default | Used by |
+|---|---|---|---|
+| `dots` | dots | 1.2 mm dots every 3 mm, 0.5 mm high | open land |
+| `rings` | rings | 2.4 mm rings every 4 mm, 0.5 mm high | forest |
+| `hatching` | lines | 1 mm ridges every 3 mm at 45°, 0.5 mm high | forbidden |
+| `waves` | waves | 0.8 mm wavy ridges every 3 mm, 0.4 mm high | water |
+| `stripes` | lines | 0.8 mm ridges every 2.5 mm east-west, 0.4 mm high | canopy |
+
+Keys: `kind` (`dots`, `rings`, `lines`, `waves`), `pitch_mm` (distance between dots or
+ridges), `size_mm` (dot or ring diameter, ridge width), `height_mm`, `angle_deg` (ridge
+direction, 0 = east-west), `line_mm` (ring wall). Add your own as `[texture.my_name]` in
+a settings file and use it with `texture = "my_name"`.
+
+Textures keep half their size plus 0.3 mm away from the edge of their area (0.9 mm for
+the dots), so the edge stays crisp, and
+their grid is anchored to the plate, so neighbouring pieces line up. Pieces of ridge too
+short to feel are dropped. On a recessed area (water) the texture stands on the floor.
+
+### `[smoothing]`: how outlines are drawn
+
+| Setting | Default | What it does |
+|---|---|---|
+| `line_join` | `"round"` | corners of redrawn lines (walls, fences): `round`, `mitre` or `bevel` |
+| `line_cap` | `"round"` | ends of redrawn lines: `round`, `flat` or `square` |
+| `arc_segments` | `4` | segments per quarter circle wherever the tool rounds a shape |
+| `curve_step_mm` | `0.035` | chord length when reading curves from the PDF (mm on the PDF page); smaller = smoother and slower |
+| `simplify_mm` | `0` | remove outline detail smaller than this; `0` = exact outlines |
+| `round_corners_mm` | `0` | round sharp corners of areas and objects with this radius; `0` = as drawn |
+
+**Where the rounding you see comes from**, with the defaults:
+
+1. Walls and other line objects are not copied from the PDF: they are redrawn along their
+   centre line, at least `min_width_mm` wide, with round ends and round corners
+   (`line_cap`, `line_join`). Use `mitre` and `flat` for sharp corners.
+2. Objects closer than `merge_gap_mm` merge (double walls). This fills in the inside
+   corners of walls: the biggest visible rounding (`generalize.merge_close_objects`,
+   `generalize.merge_gap_mm`).
+3. Generalisation widens passages and thin parts with rounded growth (`[generalize]`).
+4. Small objects narrower than their `min_width_mm` grow, with rounded corners.
+
+Area outlines are otherwise exact: they follow the PDF to within `curve_step_mm`.
+`simplify_mm` and `round_corners_mm` add more smoothing if you want it. Areas keep
+tiling the map exactly: what one loses, its neighbour gains.
+
+### `[generalize]`: automatic changes for touch
+
+Run in this order; each can be switched off. The targets come from `[tactile]`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `clean_slivers` | `true` | ground strips narrower than `sliver_mm` are drawing artefacts (fills that do not quite meet): given to the area around them |
+| `sliver_mm` | `0.4` | |
+| `open_passages` | `true` | passages between parts of a raised area (two buildings) narrower than `tactile.min_gap_mm` are widened to it, by trimming the raised area |
+| `widen_thin` | `true` | raised parts narrower than `tactile.min_feature_mm` grow into the lower ground around them |
+| `merge_close_objects` | `true` | objects of one class closer than `merge_gap_mm` merge into one (double walls, the dashes of a path); not classes with `merge_gaps = false` (trees) |
+| `merge_gap_mm` | `3.0` | |
+| `widen_objects` | `true` | lines and small objects are widened to their class `min_width_mm`; `false` = drawn width |
+| `min_area_mm2` | `0.4` | pieces smaller than this are dropped (too small to feel or print) |
+
+### `[tactile]`: the tactile check
+
+| Setting | Default | What it checks |
+|---|---|---|
+| `min_feature_mm` | `1.0` | raised parts narrower than this are hard to feel and to print |
+| `min_gap_mm` | `3.0` | raised parts closer than this feel like one |
+| `min_height_step_mm` | `0.5` | neighbouring areas whose heights differ less, with the same texture, feel the same |
+| `min_symbol_area_mm2` | `9.0` | isolated areas smaller than this are hard to identify |
+
+Starting values from common tactile-graphics practice: confirm them with the people who
+read the maps, using test tiles.
+
+### `[output]`: size and layout
+
+| Setting | Default | What it does |
+|---|---|---|
+| `width_mm` | `120` | printed width of the map (or `--width`, or `--scale` with `--map-scale`) |
+| `base_mm` | `2.0` | base plate thickness; recesses always leave 0.4 mm of plate |
+| `top_skin_mm` | `0.6` | per-layer parts: each area owns this much of the plate under it |
+| `north_height_mm` | `1.0` | height of the north symbols |
+| `orientation_corner_mm` | `0` | cut off the top-right corner of the plate by this much |
+| `title` | `"auto"` | Braille title at the top left: `"auto"` = the file name, `""` = none |
+| `map_scale` | `0` | scale of the printed map (or `--map-scale`) |
+| `legend_max_height_mm` | `200` | the legend plate wraps into columns above this height |
+
+Fixed layout, not settings: 5 mm margins, north symbols 7 × 20 mm, legend samples
+16 × 10 mm, legend frames 0.8 mm wide and 0.6 mm high.
+
+### `[braille]`: Braille size
+
+`dot_diameter_mm` 1.5, `dot_height_mm` 0.6, `dot_spacing_mm` 2.5, `cell_spacing_mm` 6,
+`line_spacing_mm` 10. Uncontracted Braille, never scaled with the map. Dots are
+rounded-off cones, easy to read and to print.
+
+### `[[symbol]]` rules
+
+Which PDF paint operation becomes which class. These belong in the config file, not in
+settings files: copy `config/default.toml` and edit the rules for a map with other
+colours (see the README, step 3). Two decisions in the rules are worth knowing:
+
+- paper with nothing printed on it counts as **forest** (white is forest in ISOM);
+- the first rule that matches wins, so the order of the black rules matters
+  (crosses, then footpath dashes, dotted lines, walls, outlines).

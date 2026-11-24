@@ -1,0 +1,19 @@
+# Profile: shapes as close to the map as possible. No standard symbols (trees, crosses
+# keep the shape drawn on the map), lines keep their drawn width with sharp corners and
+# flat ends, and no automatic generalisation. Textures stay on.
+# The tactile check will report more problems: parts may be too thin or too close to feel.
+# Use with: pdf-map-to-stl build MAP.pdf --settings as_drawn
+
+[features]
+standard_symbols = false
+
+[smoothing]
+line_join = "mitre"
+line_cap = "flat"
+
+[generalize]
+clean_slivers = false
+open_passages = false
+widen_thin = false
+merge_close_objects = false
+widen_objects = false

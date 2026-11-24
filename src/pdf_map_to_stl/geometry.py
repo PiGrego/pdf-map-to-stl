@@ -17,7 +17,8 @@ from shapely.ops import unary_union
 
 Point2 = tuple[float, float]
 
-# Maximum chord length (pt) when flattening Bezier curves. 0.1 pt = 0.035 mm on the PDF page.
+# Default maximum chord length (pt) when flattening Bezier curves: 0.1 pt = 0.035 mm on the
+# PDF page. The setting smoothing.curve_step_mm changes it.
 CURVE_STEP_PT = 0.1
 _MAX_CURVE_SEGMENTS = 64
 
@@ -31,11 +32,11 @@ def _xy(p) -> Point2:
     return (float(p.x), float(p.y))
 
 
-def flatten_cubic(p0: Point2, p1: Point2, p2: Point2, p3: Point2) -> list[Point2]:
-    """Points along a cubic Bezier, excluding p0, with chords of about CURVE_STEP_PT."""
+def flatten_cubic(p0: Point2, p1: Point2, p2: Point2, p3: Point2, step: float = CURVE_STEP_PT) -> list[Point2]:
+    """Points along a cubic Bezier, excluding p0, with chords of about ``step`` (pt)."""
     ctrl = np.array([p0, p1, p2, p3])
     length = float(np.sum(np.hypot(*np.diff(ctrl, axis=0).T)))
-    n = max(2, min(_MAX_CURVE_SEGMENTS, math.ceil(length / CURVE_STEP_PT)))
+    n = max(2, min(_MAX_CURVE_SEGMENTS, math.ceil(length / step)))
     t = np.linspace(0.0, 1.0, n + 1)[1:, None]
     pts = (
         (1 - t) ** 3 * ctrl[0]
@@ -46,7 +47,7 @@ def flatten_cubic(p0: Point2, p1: Point2, p2: Point2, p3: Point2) -> list[Point2
     return [tuple(p) for p in pts]
 
 
-def subpaths(items: Sequence, close_path: bool = False) -> list[tuple[list[Point2], bool]]:
+def subpaths(items: Sequence, close_path: bool = False, step: float = CURVE_STEP_PT) -> list[tuple[list[Point2], bool]]:
     """Split PyMuPDF path items into polylines.
 
     Returns ``(points, closed)`` pairs. A new subpath starts when an item does not begin
@@ -84,7 +85,7 @@ def subpaths(items: Sequence, close_path: bool = False) -> list[tuple[list[Point
         if kind == "l":
             cur.append(_xy(it[2]))
         elif kind == "c":
-            cur.extend(flatten_cubic(start, _xy(it[2]), _xy(it[3]), _xy(it[4])))
+            cur.extend(flatten_cubic(start, _xy(it[2]), _xy(it[3]), _xy(it[4]), step))
     flush(close_path)
     if close_path and out:
         pts, _ = out[-1]
@@ -98,9 +99,9 @@ def _signed_area(ring: Sequence[Point2]) -> float:
     return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
 
 
-def fill_geometry(items: Sequence, even_odd: bool | None) -> BaseGeometry:
+def fill_geometry(items: Sequence, even_odd: bool | None, step: float = CURVE_STEP_PT) -> BaseGeometry:
     """Area painted by filling a path. Every subpath is implicitly closed for filling."""
-    rings = [pts for pts, _ in subpaths(items) if len(pts) >= 3]
+    rings = [pts for pts, _ in subpaths(items, step=step) if len(pts) >= 3]
     if not rings:
         return Polygon()
     polys = []
@@ -137,13 +138,14 @@ def stroke_geometry(
     line_join: int = 0,
     close_path: bool = False,
     min_width: float = 0.0,
+    step: float = CURVE_STEP_PT,
 ) -> BaseGeometry:
     """Area painted by stroking a path with the given width (pt)."""
     w = max(float(width or 0.0), min_width)
     if w <= 0:
         return Polygon()
     parts = []
-    for pts, closed in subpaths(items, close_path):
+    for pts, closed in subpaths(items, close_path, step):
         line = LineString(pts + [pts[0]] if closed else pts)
         if line.length == 0:
             continue
@@ -158,10 +160,10 @@ def stroke_geometry(
     return areal(unary_union(parts)) if parts else Polygon()
 
 
-def centerlines(items: Sequence, close_path: bool = False) -> list[LineString]:
+def centerlines(items: Sequence, close_path: bool = False, step: float = CURVE_STEP_PT) -> list[LineString]:
     return [
         LineString(pts + [pts[0]] if closed else pts)
-        for pts, closed in subpaths(items, close_path)
+        for pts, closed in subpaths(items, close_path, step)
         if len(pts) >= 2
     ]
 

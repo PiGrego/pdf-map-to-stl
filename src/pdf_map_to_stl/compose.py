@@ -5,6 +5,10 @@ Pure vector painter's algorithm, run top-down: the visible part of a primitive i
 painted area minus everything painted later that covers it. Objects (walls, hedges,
 trees) and ignored symbols (course, contours) do not take part, so they never cut
 holes in the terrain underneath them.
+
+Classes switched off in the settings are resolved here: a terrain class that is off
+takes part as the class it merges into (canopy -> paved), an object class that is off
+is ignored. ``Classified.source`` keeps the class the symbol rules gave.
 """
 
 from __future__ import annotations
@@ -24,9 +28,10 @@ from .scene import Primitive, Scene
 @dataclass
 class Classified:
     prim: Primitive
-    cls: str
+    cls: str  # the class it is shown as on the model (``source`` unless switched off)
     isom: str
-    role: str
+    role: str  # terrain | object | ignore, on the model
+    source: str = ""  # the class the symbol rules gave
 
 
 @dataclass
@@ -46,8 +51,9 @@ def _luminance(rgb: tuple[int, int, int]) -> float:
 def classify(scene: Scene, cfg: Config) -> list[Classified]:
     out = []
     for p in scene.primitives:
-        cls, isom = cfg.classify(p)
-        out.append(Classified(p, cls, isom, cfg.role(cls)))
+        source, isom = cfg.classify(p)
+        shown = cfg.shown_as(source)
+        out.append(Classified(p, shown or source, isom, cfg.role(shown) if shown else "ignore", source))
     return out
 
 
