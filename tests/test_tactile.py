@@ -7,7 +7,7 @@ from shapely.geometry import Point, box
 
 from pdf_map_to_stl.config import Texture, load_config
 from pdf_map_to_stl.generalize import generalize
-from pdf_map_to_stl.legend import build_legend
+from pdf_map_to_stl.legend import build_legend, classes_in_model
 from pdf_map_to_stl.model3d import Layer, TactileModel, build_solid, texture_geometry
 from pdf_map_to_stl.pipeline import BuildOptions, build
 from pdf_map_to_stl.tactile_check import check_model
@@ -42,16 +42,17 @@ def test_check_flags_a_narrow_passage_between_buildings(cfg):
 
 
 def test_check_flags_touching_areas_that_feel_the_same(cfg):
-    t = model([Layer("open_land", "terrain", 0.5, box(0, 0, 30, 40)),
-               Layer("forest", "terrain", 0.7, box(30, 0, 60, 40))])
+    # paved and building are both smooth; at 0 and 0.3 mm they would feel the same.
+    t = model([Layer("paved", "terrain", 0.0, box(0, 0, 30, 40)),
+               Layer("building", "terrain", 0.3, box(30, 0, 60, 40))])
     pairs = check_model(t, cfg).summary["low_steps"]["pairs"]
-    assert [(p["a"], p["b"]) for p in pairs] == [("open_land", "forest")]
+    assert [(p["a"], p["b"]) for p in pairs] == [("paved", "building")]
 
 
 def test_a_texture_makes_equal_heights_distinguishable(cfg):
-    # open_land and open_land_scattered_trees share a height; the second has dots.
+    # open land (dots) and forest (rings) at the same height still feel different.
     t = model([Layer("open_land", "terrain", 0.5, box(0, 0, 30, 40)),
-               Layer("open_land_scattered_trees", "terrain", 0.5, box(30, 0, 60, 40))])
+               Layer("forest", "terrain", 0.5, box(30, 0, 60, 40))])
     assert check_model(t, cfg).summary["low_steps"]["count"] == 0
 
 
@@ -88,10 +89,10 @@ def test_generalize_opens_a_narrow_passage(cfg):
 def test_generalize_merges_double_walls_but_not_trees(cfg):
     walls = box(0, 0, 40, 1).union(box(0, 2.5, 40, 3.5))  # 1.5 mm apart
     trees = Point(10, 10).buffer(1).union(Point(12.5, 10).buffer(1))
-    _, objs, rep = generalize({}, {}, {"wall": walls, "tree": trees}, cfg)
-    assert objs["wall"].geom_type == "Polygon"
+    _, objs, rep = generalize({}, {}, {"barrier": walls, "tree": trees}, cfg)
+    assert objs["barrier"].geom_type == "Polygon"
     assert objs["tree"].geom_type == "MultiPolygon"
-    assert rep.objects_merged == {"wall": 1}
+    assert rep.objects_merged == {"barrier": 1}
 
 
 # ----------------------------------------------------------------------------- textures, legend, solid
@@ -112,9 +113,9 @@ def test_line_texture_is_ridges():
 def test_legend_has_one_sample_per_class_and_prints(cfg):
     t = model([Layer("open_land", "terrain", 0.5, box(0, 0, 30, 40)),
                Layer("building", "terrain", 3.0, box(30, 0, 60, 40)),
-               Layer("wall", "object", 3.5, box(5, 5, 50, 6))])
-    legend = build_legend(t, cfg)
-    assert {lyr.cls for lyr in legend.tactile_layers()} == {"open_land", "building", "wall"}
+               Layer("barrier", "object", 3.5, box(5, 5, 50, 6))])
+    legend = build_legend(classes_in_model(t, cfg), cfg)
+    assert {lyr.cls for lyr in legend.tactile_layers()} == {"open_land", "building", "barrier"}
     assert len(legend.braille_dots) > 10
     solid = build_solid(legend)
     assert solid.genus() == 0 and str(solid.status()).endswith("NoError")
@@ -129,18 +130,19 @@ def built(tmp_path_factory):
     return out, build(BuildOptions(SAMPLE, out, validate=False))
 
 
-def test_model_has_orientation_corner_and_braille_title(built):
+def test_model_has_north_symbols_and_braille_title(built):
     _, r = built
-    assert r["tactile_check"]["orientation_corner_mm"] > 0
+    assert any(lyr["class"] == "north" and lyr["parts"] == 6 for lyr in r["layers"])  # 2 symbols x (2 dots + ring)
     assert r["model"]["braille_title"] == "sample"
-    assert r["model"]["map_box_mm"][1] > 0  # map sits above the title strip
+    _, y0, _, y1 = r["model"]["map_box_mm"]
+    assert 0 < y0 and y1 < r["model"]["height_mm"]  # margins below and above the map
     assert r["legend_stl"]["genus"] == 0
 
 
 def test_description_tells_how_to_hold_the_model(built):
     out, _ = built
     text = (out / "description.txt").read_text(encoding="utf-8")
-    assert "cut corner is at the top right" in text
+    assert "North symbols are at the top-right and bottom-left corners" in text
     assert "LEGEND" in text and "TACTILE CHECK" in text
 
 
@@ -149,7 +151,10 @@ def test_generalisation_leaves_few_problems_on_the_sample(built):
     c = r["tactile_check"]
     assert c["low_steps"]["count"] == 0
     assert c["thin_parts"]["count"] < 60  # 164 before generalisation
-    assert c["narrow_gaps"]["count"] < 15  # 72 before generalisation
+    # Areas and barriers (what generalisation changes); trees are point symbols left
+    # unmerged on purpose, and at 120 mm (about 1:2100) rows of trees are too dense.
+    not_trees = sum(n for cls, n in c["narrow_gaps"]["by_class"].items() if cls != "tree")
+    assert not_trees < 15  # 72 before generalisation
 
 
 def test_test_tile_has_no_title_strip(tmp_path):

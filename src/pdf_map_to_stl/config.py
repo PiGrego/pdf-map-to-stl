@@ -60,6 +60,9 @@ class TactileClass:
     label: str = ""  # Braille label in the legend (defaults to the class name)
     texture: Texture | None = None  # raised pattern on top, to tell same-height classes apart
     merge_gaps: bool = True  # objects: merge parts closer than the minimum gap (not for trees)
+    shape: str = ""  # objects: "dot" | "ring" | "cross" = standard symbol; "" = as drawn
+    size_mm: float = 0.0  # size of the standard symbol
+    colour: tuple[int, int, int] | None = None  # display colour, suggested filament colour
 
     @property
     def legend_label(self) -> str:
@@ -68,19 +71,24 @@ class TactileClass:
 
 @dataclass(frozen=True)
 class Texture:
-    """A raised pattern on top of an area: ``dots`` (a grid of small bumps) or ``lines``
-    (parallel ridges at ``angle_deg``)."""
+    """A raised pattern on top of an area: ``dots`` (a grid of small bumps), ``rings``
+    (a grid of small rings), ``lines`` (straight parallel ridges at ``angle_deg``) or
+    ``waves`` (wavy parallel ridges)."""
 
-    kind: str  # "dots" | "lines"
+    kind: str  # "dots" | "rings" | "lines" | "waves"
     pitch_mm: float = 3.0
-    size_mm: float = 1.2  # dot diameter or ridge width
+    size_mm: float = 1.2  # dot or ring diameter, or ridge width
     height_mm: float = 0.5
     angle_deg: float = 45.0
+    line_mm: float = 0.6  # ring wall thickness
 
     def describe(self) -> str:
-        if self.kind == "dots":
-            return f"dots every {self.pitch_mm:g} mm"
-        return f"ridges every {self.pitch_mm:g} mm"
+        return {
+            "dots": f"dots every {self.pitch_mm:g} mm",
+            "rings": f"small rings every {self.pitch_mm:g} mm",
+            "lines": f"straight ridges every {self.pitch_mm:g} mm",
+            "waves": f"wavy ridges every {self.pitch_mm:g} mm",
+        }.get(self.kind, self.kind)
 
 
 @dataclass(frozen=True)
@@ -109,9 +117,13 @@ class Config:
     rules: list[SymbolRule] = field(default_factory=list)
     tactile: TactileRules = field(default_factory=TactileRules)
     braille: BrailleSpec = field(default_factory=BrailleSpec)
-    orientation_corner_mm: float = 8.0  # cut at the top-right corner; 0 = none
-    title: str = ""  # Braille title along the bottom edge ("" = none)
-    map_scale: float = 0.0  # e.g. 4000 for 1:4000; 0 = unknown
+    orientation_corner_mm: float = 0.0  # cut at the top-right corner; 0 = none
+    title: str = ""  # Braille title at the top left ("" = none)
+    map_scale: float = 0.0  # e.g. 5000 for 1:5000; 0 = unknown
+    north_symbol: bool = True  # raised north symbols at the top-right and bottom-left
+    north_height_mm: float = 1.0
+    top_skin_mm: float = 0.6  # parts export: each area owns this much of the plate under it
+    legend_max_height_mm: float = 200.0
 
     def classify(self, p: Primitive) -> tuple[str, str]:
         """(class, isom code) of a primitive; ``unclassified`` if no rule matches."""
@@ -170,9 +182,13 @@ def load_config(path: str | Path | None = None, heights: str | Path | None = Non
         rules=rules,
         tactile=TactileRules(**data.get("tactile", {})),
         braille=BrailleSpec(**data.get("braille", {})),
-        orientation_corner_mm=float(out.get("orientation_corner_mm", 8.0)),
+        orientation_corner_mm=float(out.get("orientation_corner_mm", 0.0)),
         title=str(out.get("title", "")),
         map_scale=float(out.get("map_scale", 0.0)),
+        north_symbol=bool(out.get("north_symbol", True)),
+        north_height_mm=float(out.get("north_height_mm", 1.0)),
+        top_skin_mm=float(out.get("top_skin_mm", 0.6)),
+        legend_max_height_mm=float(out.get("legend_max_height_mm", 200.0)),
     )
 
 
@@ -186,4 +202,7 @@ def _tactile_class(name: str, c: dict) -> TactileClass:
         str(c.get("label", "")),
         Texture(**tex) if isinstance(tex, dict) else None,
         bool(c.get("merge_gaps", True)),
+        str(c.get("shape", "")),
+        float(c.get("size_mm", 0.0)),
+        tuple(c["colour"]) if "colour" in c else None,
     )

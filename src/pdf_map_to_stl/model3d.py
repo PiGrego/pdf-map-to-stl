@@ -27,7 +27,7 @@ import numpy as np
 import shapely
 from manifold3d import CrossSection, FillRule, Manifold, OpType
 from shapely import affinity
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -95,8 +95,11 @@ def build_layers(
 ) -> TactileModel:
     """Tactile layers at print scale.
 
-    ``region`` (x0, y0, x1, y1 in map mm, origin bottom-left) keeps only that rectangle,
-    for a small test tile (no title strip). ``title`` is the Braille title ("" = none).
+    Layout, following the tactile orienteering guidebook: the Braille title (and scale)
+    at the top left, north symbols at the top-right and bottom-left corners, in margins
+    above and below the map. ``region`` (x0, y0, x1, y1 in map mm, origin bottom-left)
+    keeps only that rectangle, for a small test tile (no margins). ``title`` is the
+    Braille title text ("" = none).
     """
     rect = m.scene.page_rect
     scale = cfg.width_mm / m.scene.width_pt
@@ -114,20 +117,22 @@ def build_layers(
     for layer in layers:
         layer.geom = affinity.translate(layer.geom, -x0, -y0)
 
-    # Braille title strip below the map (not on test tiles).
+    # Margins: top (title + north symbol), bottom (north symbol). Not on test tiles.
     spec = cfg.braille
+    north = cfg.north_symbol and region is None
     title = "" if region is not None else (title or "")
-    lines = braille.wrap(title, _cells_that_fit(w - 2 * EDGE_PAD_MM, spec)) if title else []
-    strip = 0.0
+    room = w - 2 * EDGE_PAD_MM - (NORTH_W_MM + EDGE_PAD_MM if north else 0)
+    lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
+    title_h = (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if lines else 0.0
+    top = 2 * EDGE_PAD_MM + max(title_h, NORTH_H_MM if north else 0.0) if (lines or north) else 0.0
+    bottom = 2 * EDGE_PAD_MM + NORTH_H_MM if north else 0.0
+    for layer in layers:
+        layer.geom = affinity.translate(layer.geom, 0, bottom)
+    total_h = bottom + h + top
     dots: list[tuple[float, float]] = []
-    if lines:
-        strip = 2 * EDGE_PAD_MM + (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm
-        for layer in layers:
-            layer.geom = affinity.translate(layer.geom, 0, strip)
-        for i, line in enumerate(lines):
-            dots += braille.dot_centres(line, spec, EDGE_PAD_MM, strip - EDGE_PAD_MM - i * spec.line_spacing_mm)
+    for i, line in enumerate(lines):
+        dots += braille.dot_centres(line, spec, EDGE_PAD_MM, total_h - EDGE_PAD_MM - i * spec.line_spacing_mm)
 
-    total_h = h + strip
     plate = box(0, 0, w, total_h)
     c = min(cfg.orientation_corner_mm, w / 3, total_h / 3)
     if c > 0:
@@ -135,24 +140,48 @@ def build_layers(
     layers = [_clip_layer(lyr, plate) for lyr in layers]
     layers = [lyr for lyr in layers if not lyr.geom.is_empty]
 
-    # Textures on top of the classes that have one.
+    # Textures on top of the classes that have one (on the floor of recessed ones).
     for layer in list(layers):
         tc = cfg.classes.get(layer.cls)
-        if tc and tc.texture and layer.height_mm >= 0:
+        if tc and tc.texture:
             tex = texture_geometry(layer.geom, tc.texture)
             if not tex.is_empty:
-                layers.append(
-                    Layer(f"{layer.cls} texture", "texture", layer.height_mm + tc.texture.height_mm, tex,
-                          z0_mm=layer.height_mm, on=layer.cls)
-                )
+                z0 = layer.height_mm if layer.height_mm >= 0 else -recess_depth(layer.height_mm, cfg.base_mm)
+                layers.append(Layer(f"{layer.cls} texture", "texture", z0 + tc.texture.height_mm, tex,
+                                    z0_mm=z0, on=layer.cls))
+    if north:
+        glyphs = unary_union([
+            north_symbol(w - EDGE_PAD_MM - NORTH_W_MM / 2 - c, total_h - EDGE_PAD_MM),
+            north_symbol(EDGE_PAD_MM + NORTH_W_MM / 2, bottom - EDGE_PAD_MM),
+        ])
+        layers.append(Layer("north", "north", cfg.north_height_mm, glyphs))
     if dots:
         r = spec.dot_diameter_mm / 2
         layers.append(Layer("braille", "braille", spec.dot_height_mm, unary_union([Point(p).buffer(r, 8) for p in dots])))
 
     return TactileModel(
-        w, total_h, cfg.base_mm, scale, layers, plate, (0.0, strip, w, strip + h), dots, spec, " / ".join(lines), c,
+        w, total_h, cfg.base_mm, scale, layers, plate, (0.0, bottom, w, bottom + h), dots, spec, " / ".join(lines), c,
         report.as_dict(),
     )
+
+
+NORTH_W_MM = 7.0
+NORTH_H_MM = 20.0
+
+
+def north_symbol(cx: float, y_top: float) -> BaseGeometry:
+    """The tactile north symbol: two dots, then a ring with a stem below it; the ring end
+    points north. About 7 x 20 mm, ``y_top`` is its top edge."""
+    dots = [Point(cx, y_top - 0.75).buffer(0.75, 8), Point(cx, y_top - 3.25).buffer(0.75, 8)]
+    ring_c = (cx, y_top - 5.5 - 3.5)
+    ring = Point(ring_c).buffer(3.5, 24).difference(Point(ring_c).buffer(1.8, 24))
+    stem = box(cx - 1.0, y_top - NORTH_H_MM, cx + 1.0, ring_c[1] - 3.3)
+    return unary_union(dots + [ring, stem])
+
+
+def recess_depth(height_mm: float, base_mm: float) -> float:
+    """How deep a recessed class is actually cut (always leaving a floor)."""
+    return min(-height_mm, base_mm - MIN_FLOOR_MM)
 
 
 def _generalize(layers: list[Layer], cfg: Config):
@@ -164,6 +193,19 @@ def _generalize(layers: list[Layer], cfg: Config):
     out = [Layer(c, "terrain", heights[c], _drop_small(g, cfg.min_area_mm2)) for c, g in sorted(terrain.items())]
     out += [Layer(c, "object", heights[c], _drop_small(g, cfg.min_area_mm2)) for c, g in sorted(objects.items())]
     return [lyr for lyr in out if not lyr.geom.is_empty], report
+
+
+def standard_symbol(shape: str, x: float, y: float, size: float, width: float) -> BaseGeometry:
+    """A point symbol drawn the same way everywhere: ``dot``, ``ring`` or ``cross``."""
+    if shape == "dot":
+        return Point(x, y).buffer(size / 2, 16)
+    if shape == "ring":
+        return Point(x, y).buffer(size / 2, 16).difference(Point(x, y).buffer(max(size / 2 - width, 0.3), 16))
+    if shape == "cross":
+        bar = box(-size / 2, -width / 2, size / 2, width / 2)
+        cross = unary_union([affinity.rotate(bar, 45, (0, 0)), affinity.rotate(bar, -45, (0, 0))])
+        return affinity.translate(cross, x, y)
+    raise ValueError(f"unknown shape {shape!r}")
 
 
 def _map_layers(m: MapModel, cfg: Config, rect, scale: float, frame: BaseGeometry) -> list[Layer]:
@@ -179,7 +221,12 @@ def _map_layers(m: MapModel, cfg: Config, rect, scale: float, frame: BaseGeometr
         tc = cfg.classes[cls]
         parts = []
         for p in prims:
-            if p.kind == "stroke" and p.lines:
+            if tc.shape:
+                # A standard tactile symbol at the centre of each drawn instance.
+                src = unary_union(p.lines) if p.kind == "stroke" and p.lines else p.geom
+                c = _to_model(src.centroid, rect, scale)
+                parts.append(standard_symbol(tc.shape, c.x, c.y, tc.size_mm, tc.min_width_mm))
+            elif p.kind == "stroke" and p.lines:
                 # Re-stroke the centreline at a width that can be felt and printed.
                 width = max(p.width_mm / PT_TO_MM * scale, tc.min_width_mm)
                 lines = [_to_model(ln, rect, scale) for ln in p.lines]
@@ -206,27 +253,45 @@ def _cells_that_fit(width: float, spec: braille.BrailleSpec) -> int:
     return max(1, int((width - spec.dot_spacing_mm - spec.dot_diameter_mm) // spec.cell_spacing_mm) + 1)
 
 
+def _grid_points(inner: BaseGeometry, p: float) -> np.ndarray:
+    minx, miny, maxx, maxy = inner.bounds
+    xs = np.arange(math.floor(minx / p) * p + p / 2, maxx + p, p)
+    ys = np.arange(math.floor(miny / p) * p + p / 2, maxy + p, p)
+    gx, gy = np.meshgrid(xs, ys)
+    inside = shapely.contains_xy(inner, gx.ravel(), gy.ravel())
+    return np.column_stack([gx.ravel()[inside], gy.ravel()[inside]])
+
+
 def texture_geometry(area: BaseGeometry, tex: Texture) -> BaseGeometry:
     """Raised pattern inside ``area``, kept clear of its edges so the edge stays crisp.
     The pattern grid is anchored to the model origin, so neighbouring pieces line up."""
     inner = area.buffer(-(tex.size_mm / 2 + 0.3))
     if inner.is_empty:
         return Polygon()
-    minx, miny, maxx, maxy = inner.bounds
     p = tex.pitch_mm
-    if tex.kind == "dots":
-        xs = np.arange(math.floor(minx / p) * p + p / 2, maxx + p, p)
-        ys = np.arange(math.floor(miny / p) * p + p / 2, maxy + p, p)
-        gx, gy = np.meshgrid(xs, ys)
-        inside = shapely.contains_xy(inner, gx.ravel(), gy.ravel())
-        pts = np.column_stack([gx.ravel()[inside], gy.ravel()[inside]])
-        return unary_union([Point(x, y).buffer(tex.size_mm / 2, 4) for x, y in pts]) if len(pts) else Polygon()
-    if tex.kind == "lines":
+    if tex.kind in ("dots", "rings"):
+        pts = _grid_points(inner, p)
+        if not len(pts):
+            return Polygon()
+        r = tex.size_mm / 2
+        if tex.kind == "dots":
+            return unary_union([Point(x, y).buffer(r, 4) for x, y in pts])
+        hole = max(r - tex.line_mm, 0.2)
+        return unary_union([Point(x, y).buffer(r, 8).difference(Point(x, y).buffer(hole, 8)) for x, y in pts])
+    if tex.kind in ("lines", "waves"):
         rot = affinity.rotate(inner, -tex.angle_deg, origin=(0, 0))
         rminx, rminy, rmaxx, rmaxy = rot.bounds
         ys = np.arange(math.floor(rminy / p) * p, rmaxy + p, p)
-        strips = unary_union([box(rminx - 1, y, rmaxx + 1, y + tex.size_mm) for y in ys])
-        ridges = affinity.rotate(rot.intersection(strips), tex.angle_deg, origin=(0, 0))
+        if tex.kind == "lines":
+            ridges = unary_union([box(rminx - 1, y, rmaxx + 1, y + tex.size_mm) for y in ys])
+        else:
+            xs = np.arange(rminx - 1, rmaxx + 1.25, 0.25)
+            amp, wavelength = p / 4, 2 * p
+            ridges = unary_union([
+                LineString(np.column_stack([xs, y + amp * np.sin(2 * np.pi * xs / wavelength)])).buffer(tex.size_mm / 2, 4)
+                for y in ys
+            ])
+        ridges = affinity.rotate(rot.intersection(ridges), tex.angle_deg, origin=(0, 0))
         return _drop_small(ridges, 2 * tex.size_mm**2)  # no stubs too short to feel
     raise ValueError(f"unknown texture kind {tex.kind!r}")
 
@@ -254,27 +319,31 @@ def braille_dot(x: float, y: float, z: float, spec: braille.BrailleSpec) -> Mani
 
 
 def build_solid(t: TactileModel) -> Manifold:
+    """Plate + raised layers - recesses, then textures, north symbols and Braille on top.
+    Textures come after the recesses, so a texture on a recess floor (water waves) stays."""
     raised = [_cross_section(t.plate).extrude(t.base_mm)]
-    recessed = []
+    recessed, on_top = [], []
     for layer in t.layers:
         if layer.role == "braille":
             continue  # built from braille_dots as domed dots below
-        thickness = layer.height_mm - layer.z0_mm
-        if layer.height_mm == 0 and layer.z0_mm == 0:
-            continue
         cs = _cross_section(layer.geom)
         if cs.is_empty():
             continue
-        if layer.height_mm > 0:
-            overlap = 0.01 if layer.z0_mm > 0 else 0.0  # fuse textures with the area below
-            raised.append(cs.extrude(thickness + overlap).translate((0, 0, t.base_mm + layer.z0_mm - overlap)))
-        else:
-            depth = min(-layer.height_mm, t.base_mm - MIN_FLOOR_MM)
+        if layer.role == "texture":
+            overlap = 0.01  # fuse with the surface below
+            on_top.append(cs.extrude(layer.height_mm - layer.z0_mm + overlap)
+                          .translate((0, 0, t.base_mm + layer.z0_mm - overlap)))
+        elif layer.height_mm > 0:
+            raised.append(cs.extrude(layer.height_mm).translate((0, 0, t.base_mm)))
+        elif layer.height_mm < 0:
+            depth = recess_depth(layer.height_mm, t.base_mm)
             recessed.append(cs.extrude(depth + 0.01).translate((0, 0, t.base_mm - depth)))
-    raised += [braille_dot(x, y, t.base_mm, t.braille_spec) for x, y in t.braille_dots]
     solid = Manifold.batch_boolean(raised, OpType.Add)
     if recessed:
         solid = solid - Manifold.batch_boolean(recessed, OpType.Add)
+    on_top += [braille_dot(x, y, t.base_mm, t.braille_spec) for x, y in t.braille_dots]
+    if on_top:
+        solid = Manifold.batch_boolean([solid, *on_top], OpType.Add)
     # Safety net: keep only bodies with real volume (one plate with everything on it).
     parts = solid.decompose()
     if len(parts) > 1:

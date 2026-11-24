@@ -36,10 +36,12 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │  model3d.py    scale to print size, widen thin lines
    │  generalize.py remove artefact slivers, open narrow passages, widen thin areas,
    │                merge walls that are too close
-   │  model3d.py    textures, Braille title, orientation corner; extrude and merge
+   │  model3d.py    standard point symbols, textures, Braille title, north symbols;
+   │                extrude and merge
    ▼
- tactile model (mm) ──▶ model.stl
+ tactile model (mm) ──▶ model.stl (one body)
    │
+   ├─ parts.py          parts/*.stl    (one STL per layer, aligned, non-overlapping)
    ├─ legend.py         legend.stl     (tactile key: samples + Braille labels)
    ├─ tactile_check.py  can it be read by touch? thin parts, gaps, height steps…
    ├─ describe.py       description.txt (plain text: holding, legend, scale, check)
@@ -49,7 +51,9 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    └─ validate.py   classes.png, validation_errors.png (agreement with the rendered PDF)
 ```
 
-`pipeline.py` runs these steps in order; read it first. `cli.py` only parses arguments.
+`pipeline.py` runs these steps in order (`build`), and also makes stand-alone legends
+from every symbol in a map (`build_legend_sample`); read it first. `cli.py` only parses
+arguments.
 `pick.py` is separate: it renders the page so the user can choose a crop.
 
 ## Modules
@@ -65,7 +69,8 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
 | `model3d.py` | layers in mm, textures, Braille title, orientation corner, solid, STL | `build_layers`, `build_solid`, `write_stl` |
 | `generalize.py` | tactile simplification of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
-| `legend.py` | the tactile legend plate | `build_legend` |
+| `legend.py` | the tactile legend plate and its text | `build_legend`, `classes_in_map` |
+| `parts.py` | one STL per layer for slicers, with a README | `build_parts`, `write_parts` |
 | `tactile_check.py` | readability-by-touch checks | `check_model` |
 | `describe.py` | plain-text description | `describe` |
 | `validate.py` | pixel check against the PDF | `validate` |
@@ -95,6 +100,19 @@ north lines, thin outlines) are dropped before composing, so they never hide any
 **Configuration, not code.** Everything specific to a map or a symbol set is in
 `config/default.toml`: which colour is which symbol, which class is terrain or object,
 heights, minimum widths. Supporting a new map should normally need no code change.
+
+**The guidebook's symbol set by default.** `config/default.toml` follows the draft
+guidebook on converting ISOM / ISSprOM maps into tactile orienteering maps (Norwegian
+Orienteering Federation): a few broad categories (paved, open land, forest, forbidden,
+building, water, barrier, tree, man-made object, boulder), standard point symbols
+(`shape = "dot" | "ring" | "cross"`), north symbols at the top-right and bottom-left
+corners, title and scale at the top left. `config/isom_detailed.toml` keeps a richer set.
+
+**One part per layer.** 3D printing can do more than a thermoform sheet: each layer can
+get its own filament, colour or surface treatment. `parts.py` cuts the model into
+touching, non-overlapping solids in one coordinate system: every area owns a top skin
+of the plate (so even flat areas are a part), objects only exist above the ground under
+them, textures sit on their area, recesses own their floor.
 
 **Readable by touch, by design.** Default heights sit on levels 0.5 mm apart, and
 classes that share a level get a raised texture, so no two touching areas feel the
@@ -130,9 +148,10 @@ to have them read before printing the whole map.
   reorder a `[[symbol]]` rule in the TOML (first match wins).
 - **A new kind of feature:** add a `[class.name]` with a role and height, then point a
   rule at it. Objects can set `min_width_mm`.
-- **Textures, Braille labels, heights:** `texture`, `label`, `height_mm` of each
-  `[class.*]` in the TOML; Braille size in `[braille]`; tactile thresholds and which
-  generalisation steps run in `[tactile]`.
+- **Textures, symbols, Braille labels, heights, colours:** `texture`, `shape`/`size_mm`,
+  `label`, `height_mm`, `colour` of each `[class.*]` in the TOML; Braille size in
+  `[braille]`; thresholds and generalisation steps in `[tactile]`; north symbols, top
+  skin of parts and legend height in `[output]`.
 - **Change how the solid is built:** `model3d.build_solid`.
 - **Change the check:** `validate.py`. Keep `tests/test_sample_pipeline.py` passing: it
   checks the STL is watertight, the agreement is at least 99.5 %, and two runs give
@@ -140,6 +159,7 @@ to have them read before printing the whole map.
 
 ## Tests
 
-`pytest` runs unit tests (geometry, Braille, generalisation, tactile checks, legend)
-and end-to-end checks on `samples/sample.pdf` (about a minute). `ruff check src tests`
-must pass.
+`pytest` runs unit tests (geometry, Braille, generalisation, tactile checks, parts,
+legend) and end-to-end checks on `samples/sample.pdf` (about three minutes). Tests on
+`samples/orienteering-map-sample-Navile.pdf` are skipped if that file is missing.
+`ruff check src tests` must pass.

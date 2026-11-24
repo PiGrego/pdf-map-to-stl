@@ -21,8 +21,8 @@ def mapmodel():
 def test_dot_screens_become_402_areas(mapmodel):
     dots = [c for c in mapmodel.items if c.prim.kind == "dots"]
     assert len(dots) == 8
-    assert {c.cls for c in dots} == {"open_land_scattered_trees"}
-    assert all(c.isom == "402" for c in dots)
+    assert {c.cls for c in dots} == {"open_land"}
+    assert all(c.isom.startswith("402") for c in dots)
 
 
 def test_every_symbol_on_the_page_is_classified(mapmodel):
@@ -66,7 +66,7 @@ def test_heights_file_overrides_config(tmp_path):
     cfg = load_config(heights=h)
     assert cfg.base_mm == 3.0
     assert cfg.classes["building"].height_mm == 1.5
-    assert cfg.classes["wall"].height_mm == load_config().classes["wall"].height_mm
+    assert cfg.classes["barrier"].height_mm == load_config().classes["barrier"].height_mm
 
 
 def test_heights_file_rejects_unknown_class(tmp_path):
