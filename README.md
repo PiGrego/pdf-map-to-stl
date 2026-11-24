@@ -64,6 +64,23 @@ pdf-map-to-stl build MAP.pdf --set class.canopy.enabled=true  show canopy (porti
 `tuner.html` does the same with switches and a 3D view. Each build writes
 `settings_used.toml` with every value it used. All settings: [docs/SETTINGS.md](docs/SETTINGS.md).
 
+## Where the map is: position points
+
+Blind readers use the map together with a navigation app, so the plate can say where it
+is on Earth. Give one or two points of the map with their latitude and longitude:
+
+```
+pdf-map-to-stl build MAP.pdf --crop ... --geo 80,200,44.51500,11.34000 --geo "110,220,44°30'50.8\"N,11.341889"
+```
+
+`X,Y` is the place on the PDF page in mm from its top-left corner (`pick.html` gives it:
+"Add a point", click the place, type the coordinates). Coordinates can be decimal, as a
+web map copies them, or degrees, minutes and seconds. On the plate each point gets tall
+pins, higher than anything else (point 1: one pin, point 2: two pins side by side), and
+its coordinates are written in Braille in the bottom margin, in decimal degrees: the form
+navigation apps accept. `description.txt` lists them with a web-map link, and with two
+points it checks that their distance agrees with the map (a typing mistake shows there).
+
 ## Size and scale
 
 A tactile map can be printed from 100 mm to 1000 mm across; the right size depends on
@@ -188,7 +205,7 @@ pdf-map-to-stl size   MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--map-scale
 pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--width MM]
                               [--map-scale N] [--scale N] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
-                              [--no-textures] [--region X0,Y0,X1,Y1]
+                              [--no-textures] [--region X0,Y0,X1,Y1] [--geo X,Y,LAT,LON]...
                               [--title TEXT] [--no-validate] [-o DIR]
 pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
@@ -206,6 +223,7 @@ pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [-c CONFIG.t
   repeatable, applied in order. `--heights` still works for old tuner files.
 - `--set`: change one setting, e.g. `--set smoothing.line_join=mitre`; repeatable, applied last.
 - `--no-textures`: every area smooth.
+- `--geo`: a position point (up to two): `X,Y` on the page in mm, then latitude and longitude.
 
 ## Development
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from .compose import build_map, classify
 from .config import Config, load_config, settings_dict, to_toml
 from .describe import describe, tactile_scale, write_description
+from .geo import MAX_POINTS, GeoPoint, check_points
 from .legend import DEFAULT_TITLE, build_legend, classes_in_map, classes_in_model, legend_text
 from .model3d import TactileModel, build_layers, build_solid, layer_summary, write_stl
 from .parts import build_parts, write_parts
@@ -65,6 +66,7 @@ class BuildOptions:
     validate: bool = True
     settings: tuple = ()  # settings files or profile names, applied in order after the config
     overrides: tuple = ()  # "section.key=value" strings, applied last
+    geo: tuple[GeoPoint, ...] = ()  # position points: where the map is on Earth (geo.py)
 
 
 def describe_window(crop_mm) -> str:
@@ -147,6 +149,8 @@ def rebuild_command(o: BuildOptions) -> str:
         cmd += ["-c", _arg(o.config)]
     if o.title is not None:
         cmd += ["--title", f'"{o.title}"']
+    for p in o.geo:
+        cmd += ["--geo", f"{p.x_mm:g},{p.y_mm:g},{p.lat:.7f},{p.lon:.7f}"]
     cmd += ["--settings", _arg(o.out / "settings_used.toml"), "--settings", "settings.toml", "-o", _arg(o.out)]
     return " ".join(cmd)
 
@@ -175,7 +179,9 @@ def build(o: BuildOptions) -> dict:
     title = resolve_title(o.title, cfg.title, o.pdf)
     if title and cfg.map_scale:
         title += f" 1:{cfg.map_scale * scene.width_pt * PT_TO_MM / cfg.width_mm:.0f}"
-    t = build_layers(m, cfg, o.region_mm, title)
+    if len(o.geo) > MAX_POINTS:
+        raise ValueError(f"at most {MAX_POINTS} position points (--geo)")
+    t = build_layers(m, cfg, o.region_mm, title, o.geo)
     stl, parts = _write_model(t, o.out, "model", "parts", cfg)
     legend = build_legend(classes_in_model(t, cfg), cfg)
     legend_stl, legend_parts = _write_model(legend, o.out, "legend", "legend_parts", cfg)
@@ -186,8 +192,8 @@ def build(o: BuildOptions) -> dict:
     # 7. Things to read and look at.
     colours = class_colours(cfg, m.background_class)
     source = f"{o.pdf.name}, page {o.page + 1}" + (f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
-    write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines),
-                      o.out / "description.txt")
+    write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines,
+                               check_points(list(o.geo), cfg.map_scale)), o.out / "description.txt")
     relief_image(t, colours).save(o.out / "relief_preview.png")
     relief_image(legend, colours).save(o.out / "legend_preview.png")
     check_image(t, check.problems).save(o.out / "tactile_check.png")
@@ -222,6 +228,7 @@ def build(o: BuildOptions) -> dict:
         },
         "size": {**suggestion.as_dict(), "used_width_mm": round(cfg.width_mm, 3), "source": size_source,
                  "lines": size_lines},
+        "positions": t.positions,
         "layers": layer_summary(t),
         "stl": stl,
         "parts": parts,

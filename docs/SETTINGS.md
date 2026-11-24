@@ -90,6 +90,18 @@ The map scale comes from `--map-scale`, else `output.map_scale`, else the page i
 ("Scala 1: 5000", "1:4 000"; `output.read_map_scale`). It sets the tactile scale in the
 title and lets the suggestion use round scales.
 
+### `[position]`: position points
+
+Position points (`--geo X,Y,LAT,LON`, one or two) say where the map is on Earth: tall
+pins on the map, and the coordinates in Braille in the bottom margin, for the reader's
+navigation app.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `pin_mm` | `3.0` | pin diameter; point 1 is one pin, point 2 two pins side by side |
+| `pin_height_mm` | `4.0` | above the plate, higher than anything else on the map, so they are easy to find |
+| `decimals` | `5` | decimals of the degrees in Braille; 5 is about 1 m |
+
 ### `[features]`: what the model contains
 
 | Setting | Default | What it does |

@@ -38,6 +38,7 @@ from . import braille
 from .compose import MapModel
 from .config import Config, Texture
 from .generalize import generalize
+from .geo import GeoPoint, pins
 from .geometry import polygons
 from .scene import PT_TO_MM
 
@@ -70,6 +71,7 @@ class TactileModel:
     title: str = ""
     corner_mm: float = 0.0
     generalized: dict = field(default_factory=dict)  # what generalize.py changed
+    positions: list[dict] = field(default_factory=list)  # position points: where they are on the plate
 
     def tactile_layers(self) -> list[Layer]:
         """Terrain and object layers (the map's content, without textures and Braille)."""
@@ -95,6 +97,7 @@ def build_layers(
     cfg: Config,
     region: tuple[float, float, float, float] | None = None,
     title: str | None = None,
+    geo: tuple[GeoPoint, ...] = (),
 ) -> TactileModel:
     """Tactile layers at print scale.
 
@@ -102,7 +105,8 @@ def build_layers(
     at the top left, north symbols at the top-right and bottom-left corners, in margins
     above and below the map. ``region`` (x0, y0, x1, y1 in map mm, origin bottom-left)
     keeps only that rectangle, for a small test tile (no margins). ``title`` is the
-    Braille title text ("" = none).
+    Braille title text ("" = none). ``geo`` are position points: pins on the map, and
+    their coordinates in Braille in the bottom margin (geo.py).
     """
     if cfg.width_mm <= 0:
         raise ValueError("no print width: set output.width_mm, or let pipeline.build use the suggested size")
@@ -132,13 +136,22 @@ def build_layers(
     lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
     title_h = (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if lines else 0.0
     top = 2 * EDGE_PAD_MM + max(title_h, NORTH_H_MM if north else 0.0) if (lines or north) else 0.0
-    bottom = 2 * EDGE_PAD_MM + NORTH_H_MM if north else 0.0
+    # Bottom margin: north symbol at the left, then the position points' coordinates.
+    geo_x = EDGE_PAD_MM + (NORTH_W_MM + EDGE_PAD_MM if north else 0.0)
+    geo_cells = _cells_that_fit(w - geo_x - EDGE_PAD_MM, spec)
+    geo_lines = [] if region is not None else [
+        line for i, p in enumerate(geo, 1) for line in braille.wrap(f"{i}: {p.text(cfg.position.decimals)}", geo_cells)
+    ]
+    geo_h = (len(geo_lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if geo_lines else 0.0
+    bottom = 2 * EDGE_PAD_MM + max(NORTH_H_MM if north else 0.0, geo_h) if (north or geo_lines) else 0.0
     for layer in layers:
         layer.geom = affinity.translate(layer.geom, 0, bottom)
     total_h = bottom + h + top
     dots: list[tuple[float, float]] = []
     for i, line in enumerate(lines):
         dots += braille.dot_centres(line, spec, EDGE_PAD_MM, total_h - EDGE_PAD_MM - i * spec.line_spacing_mm)
+    for i, line in enumerate(geo_lines):
+        dots += braille.dot_centres(line, spec, geo_x, bottom - EDGE_PAD_MM - i * spec.line_spacing_mm)
 
     plate = box(0, 0, w, total_h)
     c = min(cfg.orientation_corner_mm, w / 3, total_h / 3)
@@ -163,6 +176,20 @@ def build_layers(
         band = inside.buffer(cfg.window_edge_mm, 4).difference(inside).intersection(box(0, bottom, w, bottom + h))
         if not band.is_empty:
             layers.append(Layer("edge", "edge", cfg.window_edge_height_mm, band))
+    positions, pin_shapes = [], []
+    inside = affinity.translate(frame, -x0, -y0 + bottom)
+    for i, p in enumerate(geo, 1):
+        px, py = _to_model(Point(m.scene.page_point(p.x_mm, p.y_mm)), rect, scale).coords[0]
+        px, py = px - x0, py - y0 + bottom
+        if not inside.buffer(1e-6).contains(Point(px, py)):
+            if region is not None:
+                continue  # a test tile shows only the points inside it
+            raise ValueError(f"position point {i} ({p.x_mm:g}, {p.y_mm:g} mm on the page) lies outside the window")
+        pin_shapes.append(pins(i, px, py, cfg.position.pin_mm))
+        positions.append({"point": i, "pins": i, "x_mm": round(px, 1), "y_mm": round(py, 1),
+                          "lat": p.lat, "lon": p.lon, "text": p.text(cfg.position.decimals)})
+    if pin_shapes:
+        layers.append(Layer("position", "pin", cfg.position.pin_height_mm, unary_union(pin_shapes)))
     if north:
         glyphs = unary_union([
             north_symbol(w - EDGE_PAD_MM - NORTH_W_MM / 2 - c, total_h - EDGE_PAD_MM),
@@ -175,7 +202,7 @@ def build_layers(
 
     return TactileModel(
         w, total_h, cfg.base_mm, scale, layers, plate, (0.0, bottom, w, bottom + h), dots, spec, " / ".join(lines), c,
-        report.as_dict(),
+        report.as_dict(), positions,
     )
 
 
@@ -345,6 +372,9 @@ def build_solid(t: TactileModel) -> Manifold:
     for layer in t.layers:
         if layer.role == "braille":
             continue  # built from braille_dots as domed dots below
+        if layer.role == "pin":  # from the bottom of the plate, so a pin in a recess stands on its floor
+            on_top.append(_cross_section(layer.geom).extrude(t.base_mm + layer.height_mm))
+            continue
         cs = _cross_section(layer.geom)
         if cs.is_empty():
             continue

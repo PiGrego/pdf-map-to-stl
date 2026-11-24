@@ -111,8 +111,22 @@ def automatic_changes(cfg: Config, t: TactileModel, items: list[Classified]) -> 
     return lines
 
 
+def position_lines(t: TactileModel, geo_check: list[str]) -> list[str]:
+    """Where the position points are, on the plate and on Earth."""
+    lines = []
+    for p in t.positions:
+        pins = "one tall pin" if p["pins"] == 1 else f"{p['pins']} tall pins side by side"
+        lines.append(f"Point {p['point']} ({pins}, {p['x_mm']:g} mm from the left and {p['y_mm']:g} mm from the "
+                     f"bottom of the plate): {p['text']} (latitude, longitude in decimal degrees, WGS 84). "
+                     f"On a web map: https://www.openstreetmap.org/?mlat={p['lat']:.6f}&mlon={p['lon']:.6f}&zoom=18")
+    if lines:
+        lines.append("The coordinates are also in Braille in the bottom margin, after the point number.")
+    return lines + geo_check
+
+
 def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list[str],
-             items: list[Classified] | None = None, size_lines: list[str] | None = None) -> str:
+             items: list[Classified] | None = None, size_lines: list[str] | None = None,
+             geo_check: list[str] | None = None) -> str:
     enlarge = t.scale / PT_TO_MM  # model mm per PDF mm
     lines = [
         f"TACTILE MAP: {t.title or 'untitled'}",
@@ -142,6 +156,8 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
     if t.title:
         hold.append(f'The Braille title "{t.title}" is at the top left.')
     lines.append(" ".join(hold))
+    if t.positions:
+        lines += ["", "WHERE IT IS"] + position_lines(t, geo_check or [])
 
     lines += ["", "LEGEND (also printed as legend.stl)"]
     classes = classes_in_model(t, cfg)

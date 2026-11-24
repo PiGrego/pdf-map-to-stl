@@ -43,6 +43,15 @@ detail_share = 0.9        # share of passages and parts that must meet the tacti
 ignore_below_mm = 0.15    # details narrower than this on the PDF page are drawing artefacts
 bed_mm = 256              # printer bed: a larger plate is flagged (print it in tiles)
 
+# ---------------------------------------------------------------- position points
+# With --geo X,Y,LATITUDE,LONGITUDE (one or two points), the map shows where it is on
+# Earth: tall pins at each point (point 1: one pin, point 2: two pins) and the
+# coordinates in Braille in the bottom margin, for the reader's navigation app.
+[position]
+pin_mm = 3.0              # pin diameter
+pin_height_mm = 4.0       # above the plate: higher than anything else
+decimals = 5              # decimals of the degrees in Braille (5 = about 1 m)
+
 # ---------------------------------------------------------------- features
 # What the model contains besides the map's own areas and objects.
 [features]

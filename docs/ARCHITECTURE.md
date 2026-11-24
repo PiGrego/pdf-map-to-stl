@@ -40,7 +40,8 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │                caps and joins from [smoothing])
    │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
    │                areas, merge walls that are too close, (round corners)
-   │  model3d.py    standard point symbols, textures, Braille title, north symbols;
+   │  model3d.py    standard point symbols, textures, Braille title, north symbols,
+   │                position pins and their coordinates in Braille (geo.py);
    │                extrude and merge
    ▼
  tactile model (mm) ──▶ model.stl (one body)
@@ -73,6 +74,7 @@ arguments.
 | `config.py` | loads the config and settings files; matches a primitive to a class; writes settings_used.toml | `load_config`, `Config.classify`, `Config.shown_as`, `settings_dict` |
 | `compose.py` | visible terrain + objects | `build_map` |
 | `model3d.py` | layers in mm, textures, standard symbols, Braille title, north symbols, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `geo.py` | position points: coordinates in any form, pins, the distance check | `parse_geo`, `pins`, `check_points` |
 | `size.py` | suggested print size from the map's details and scale | `suggest_size` |
 | `generalize.py` | tactile simplification and optional smoothing of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
@@ -158,7 +160,9 @@ they keep tiling the map. `tactile_check.py` then reports whatever is still too 
 with locations, instead of silently hiding it.
 
 **Everything a reader needs is on the plate.** North symbols, Braille title and scale,
-separate Braille legend; Braille is placed at standard physical size, never scaled.
+separate Braille legend, and optionally where the map is on Earth (position pins with
+their coordinates in Braille, for navigation apps); Braille is placed at standard
+physical size, never scaled.
 
 **Heights are confirmed by touch.** `tuner.html` lets the operator try heights, switches,
 textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;

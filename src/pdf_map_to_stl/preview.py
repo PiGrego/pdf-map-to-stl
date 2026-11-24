@@ -42,7 +42,7 @@ def relief_image(t: TactileModel, colours: dict, px_per_mm: float = 8.0) -> Imag
         top = layer.height_mm
         sel = mask & (top >= z) if top >= 0 else mask
         z[sel] = top
-        if layer.role in ("braille", "north", "frame", "edge"):
+        if layer.role in ("braille", "north", "frame", "edge", "pin"):
             rgb[sel] = BRAILLE
         elif layer.role == "texture":
             rgb[sel] = np.array(colours.get(layer.on, (255, 255, 255))) * TEXTURE_SHADE

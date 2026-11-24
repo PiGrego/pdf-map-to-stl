@@ -81,7 +81,7 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
 
     ground = _union(terrain_cols)
     placed: list[Manifold] = []
-    objects = sorted((lyr for lyr in t.layers if lyr.role == "object"), key=lambda lyr: -lyr.height_mm)
+    objects = sorted((lyr for lyr in t.layers if lyr.role in ("object", "pin")), key=lambda lyr: -lyr.height_mm)
     for layer in objects:
         solid = _column(layer.geom, base_z, base_z + layer.height_mm)
         if ground is not None:
@@ -91,7 +91,8 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
         if solid.is_empty() or solid.volume() < 1e-3:
             continue
         placed.append(solid)
-        parts.append(Part(layer.cls, "object", solid, base_z + layer.height_mm, f"{layer.height_mm:g} mm high"))
+        note = f"{layer.height_mm:g} mm high" if layer.role == "object" else "position pins (point 1: one pin, point 2: two)"
+        parts.append(Part(layer.cls, layer.role, solid, base_z + layer.height_mm, note))
 
     object_area = unary_union([lyr.geom for lyr in t.layers if lyr.role == "object"])
     for layer in (lyr for lyr in t.layers if lyr.role == "texture"):

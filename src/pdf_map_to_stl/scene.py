@@ -65,6 +65,11 @@ class Scene:
     primitives: list[Primitive]  # sorted by paint order
     stats: dict
     window: BaseGeometry | None = None  # the window itself (rectangle or polygon), PDF points
+    page_origin: tuple[float, float] = (0.0, 0.0)  # top-left corner of the page, PDF points
+
+    def page_point(self, x_mm: float, y_mm: float) -> tuple[float, float]:
+        """A point given in mm from the page's top-left corner (like --crop), in PDF points."""
+        return self.page_origin[0] + x_mm / PT_TO_MM, self.page_origin[1] + y_mm / PT_TO_MM
 
     @property
     def area(self) -> BaseGeometry:
@@ -137,6 +142,7 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
         page = doc[page_number]
         window = window_pt(page.rect, crop_mm)
         area = tuple(window.bounds)
+        origin = (float(page.rect.x0), float(page.rect.y0))
         drawings = page.get_drawings(extended=True)
 
     paints, clips = _attach_clip_stacks(drawings)
@@ -170,7 +176,7 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
         "area_pt": [round(v, 4) for v in area],
         "window_points": 0 if crop_mm is None else len(crop_mm) // 2,
     }
-    return Scene(pdf_path, page_number, area, prims, stats, window if crop_mm is not None else None)
+    return Scene(pdf_path, page_number, area, prims, stats, window if crop_mm is not None else None, origin)
 
 
 # ----------------------------------------------------------------------------- steps

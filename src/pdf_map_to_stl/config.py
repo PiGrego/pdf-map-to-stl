@@ -174,6 +174,15 @@ class SizeRules:
 
 
 @dataclass(frozen=True)
+class PositionRules:
+    """Position points (geo.py): pins on the map and their coordinates in Braille."""
+
+    pin_mm: float = 3.0  # pin diameter; point 1 is one pin, point 2 two pins side by side
+    pin_height_mm: float = 4.0  # above the plate: higher than anything else, easy to find
+    decimals: int = 5  # decimals of the degrees in Braille (5 = about 1 m)
+
+
+@dataclass(frozen=True)
 class Output:
     width_mm: float | str = "auto"  # printed map width; "auto" = the suggested size
     base_mm: float = 2.0  # base plate thickness
@@ -200,6 +209,7 @@ class Config:
     smoothing: Smoothing = field(default_factory=Smoothing)
     generalize: Generalize = field(default_factory=Generalize)
     size: SizeRules = field(default_factory=SizeRules)
+    position: PositionRules = field(default_factory=PositionRules)
     textures: dict[str, Texture] = field(default_factory=dict)  # the texture library
     orientation_corner_mm: float = 0.0
     title: str = ""
@@ -345,7 +355,7 @@ def _section(kind, d: dict, name: str):
     return kind(**d)
 
 
-TOP_SECTIONS = ("output", "size", "features", "smoothing", "generalize", "tactile", "braille", "texture", "class",
+TOP_SECTIONS = ("output", "size", "position", "features", "smoothing", "generalize", "tactile", "braille", "texture", "class",
                 "symbol")
 
 
@@ -394,6 +404,7 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         smoothing=smoothing,
         generalize=_section(Generalize, data.get("generalize", {}), "generalize"),
         size=_section(SizeRules, data.get("size", {}), "size"),
+        position=_section(PositionRules, data.get("position", {}), "position"),
         textures=library,
         orientation_corner_mm=float(out.orientation_corner_mm),
         title=str(out.title),
@@ -494,6 +505,7 @@ def settings_dict(cfg: Config) -> dict:
             "read_map_scale": cfg.read_map_scale, "legend_max_height_mm": cfg.legend_max_height_mm,
         },
         "size": asdict(cfg.size),
+        "position": asdict(cfg.position),
         "features": asdict(cfg.features),
         "smoothing": asdict(cfg.smoothing),
         "generalize": asdict(cfg.generalize),

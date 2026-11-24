@@ -21,6 +21,11 @@
   #overlay .shape { fill: rgba(208,2,27,.08); stroke: var(--sel); stroke-width: 2; vector-effect: non-scaling-stroke; }
   #overlay .open { fill: none; stroke-dasharray: 6 4; }
   #overlay circle { fill: var(--sel); }
+  #overlay .geo { fill: #1a5fb4; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  #overlay text { fill: #fff; font: bold 3px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+  .geo-row { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+  .geo-row input[type=text] { width: 100%; font: inherit; padding: 2px 4px; }
+  .bad { color: #a00; }
   main { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; }
   h1 { font-size: 17px; margin: 0 0 2px; }
   .sub { color: var(--muted); font-size: 12px; word-break: break-all; margin-bottom: 12px; }
@@ -70,6 +75,15 @@
     <textarea id="points" rows="3" placeholder="70,190, 120,190, 120,227, 90,227"></textarea>
     <pre id="crop" role="status" aria-live="polite">Whole page</pre>
 
+    <h2>Position points (optional)</h2>
+    <p class="hint">One or two points with their latitude and longitude, so the reader knows where the map is
+      and can use it with a navigation app. On the model each point gets tall pins (point 1: one pin, point 2: two)
+      and its coordinates in Braille. Click "Add a point", then click the place on the map, then type its
+      coordinates, as a web map gives them (44.51234, 11.34567) or in degrees, minutes and seconds.</p>
+    <div class="row"><button id="addGeo">Add a point</button></div>
+    <div id="geoRows"></div>
+    <p id="geoStatus" class="hint" role="status" aria-live="polite"></p>
+
     <h2>Size</h2>
     <label>Printed map width <input id="width" type="number" min="20" max="1000" step="10" placeholder="auto"> mm</label>
     <div class="hint" id="scale">Leave it empty: the build suggests the size from the map's details
@@ -86,6 +100,7 @@ const PAGE = /*__PAGE_DATA__*/null;
 const $ = id => document.getElementById(id);
 const img = $("page"), wrap = $("wrap"), svg = $("overlay");
 let zoom = 1, mode = "rect", rect = null, pts = [], closed = false, drag = null;
+let geo = [], placing = false;  // position points: {x, y, text}
 
 img.src = PAGE.image;
 $("source").textContent = `${PAGE.pdf} · page ${PAGE.page + 1}/${PAGE.pages} · ${PAGE.width_mm} × ${PAGE.height_mm} mm`;
@@ -118,6 +133,9 @@ function draw() {
     const r = 0.6 * mmPerPx() * 4;
     html += pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="${r}"/>`).join("");
   }
+  geo.forEach((g, i) => {
+    html += `<circle class="geo" cx="${g.x}" cy="${g.y}" r="2.2"/><text x="${g.x}" y="${g.y}">${i + 1}</text>`;
+  });
   svg.innerHTML = html;
 }
 
@@ -129,6 +147,15 @@ function window_() {
 
 wrap.addEventListener("pointerdown", ev => {
   const p = toMm(ev);
+  if (placing) {
+    placing = false;
+    geo.push({ x: p[0], y: p[1], text: "" });
+    $("geoStatus").textContent = `Point ${geo.length} placed at ${f(p[0])}, ${f(p[1])} mm. Type its coordinates.`;
+    geoRows();
+    update(false);
+    $(`geoText${geo.length - 1}`).focus();
+    return;
+  }
   if (mode === "poly") {
     if (closed) { pts = []; closed = false; }
     const first = pts[0], near = first && Math.hypot(first[0] - p[0], first[1] - p[1]) < 8 * mmPerPx();
@@ -158,8 +185,69 @@ function command() {
   const w = window_();
   if (w) c += ` --crop ${w.map(f).join(",")}`;
   if ($("width").value) c += ` --width ${$("width").value}`;
+  for (const g of geo) {
+    const ll = parseLatLon(g.text);
+    if (ll) c += ` --geo ${f(g.x)},${f(g.y)},${ll[0].toFixed(7)},${ll[1].toFixed(7)}`;
+  }
   return c;
 }
+
+// Coordinates in any common form: "44.51234, 11.34567", "44.51234 N 11.34567 E",
+// "44°30'44.4"N 11°20'44.4"E". Returns [lat, lon] in decimal degrees, or null.
+function parseOne(t, axis) {
+  const s = t.trim().toUpperCase().replace(/,/g, ".");
+  const hemi = s.match(/[NSEW]/g) || [], nums = (s.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  if (!nums.length || nums.length > 3 || hemi.length > 1) return null;
+  let v = Math.abs(nums[0]) + (nums[1] || 0) / 60 + (nums[2] || 0) / 3600;
+  if (nums[0] < 0 || (hemi[0] && "SW".includes(hemi[0]))) v = -v;
+  if (hemi[0] && ("NS".includes(hemi[0])) !== (axis === "lat")) return null;
+  return Math.abs(v) <= (axis === "lat" ? 90 : 180) ? v : null;
+}
+function parseLatLon(text) {
+  const t = text.trim();
+  if (!t) return null;
+  let parts = t.split(/\s*[,;]\s*/);
+  if (parts.length !== 2) {  // "44.5 N 11.3 E" or DMS without a comma: split after the first hemisphere letter
+    const m = t.match(/^(.*?[NS])\s*(.+)$/i);
+    parts = m ? [m[1], m[2]] : parts;
+  }
+  if (parts.length !== 2) return null;
+  const lat = parseOne(parts[0], "lat"), lon = parseOne(parts[1], "lon");
+  return lat === null || lon === null ? null : [lat, lon];
+}
+function geoRows() {
+  const box = $("geoRows");
+  box.innerHTML = "";
+  geo.forEach((g, i) => {
+    const div = document.createElement("div");
+    div.className = "geo-row";
+    div.innerHTML = `<strong>Point ${i + 1}</strong> (${i ? "two pins" : "one pin"}) at
+      <label style="display:inline">x <input id="geoX${i}" type="number" step="0.1" value="${f(g.x)}"></label>
+      <label style="display:inline">y <input id="geoY${i}" type="number" step="0.1" value="${f(g.y)}"></label> mm
+      <label for="geoText${i}">Latitude, longitude</label>
+      <input type="text" id="geoText${i}" value="${g.text.replace(/"/g, "&quot;")}" placeholder="44.51234, 11.34567"
+        aria-describedby="geoOk${i}">
+      <div id="geoOk${i}" class="hint"></div>
+      <button id="geoDel${i}">Remove point ${i + 1}</button>`;
+    box.appendChild(div);
+    const check = () => {
+      const ll = parseLatLon(g.text);
+      $(`geoOk${i}`).textContent = !g.text ? "Not set yet." : ll ? `Read as ${ll[0].toFixed(6)}, ${ll[1].toFixed(6)}.`
+        : "Cannot read it: latitude first, then longitude.";
+      $(`geoOk${i}`).className = !g.text || ll ? "hint" : "hint bad";
+    };
+    $(`geoText${i}`).addEventListener("input", e => { g.text = e.target.value; check(); update(false); });
+    $(`geoX${i}`).addEventListener("change", e => { g.x = Number(e.target.value); update(false); });
+    $(`geoY${i}`).addEventListener("change", e => { g.y = Number(e.target.value); update(false); });
+    $(`geoDel${i}`).addEventListener("click", () => { geo.splice(i, 1); geoRows(); update(false); });
+    check();
+  });
+  $("addGeo").disabled = geo.length >= 2;
+}
+$("addGeo").addEventListener("click", () => {
+  placing = true;
+  $("geoStatus").textContent = `Click the place of point ${geo.length + 1} on the map.`;
+});
 
 function update(syncFields = true) {
   draw();
