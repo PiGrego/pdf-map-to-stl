@@ -16,6 +16,7 @@ calibration between vectors and pixels is ever needed.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,10 +24,11 @@ from pathlib import Path
 import numpy as np
 import pymupdf
 from scipy.spatial import cKDTree
-from shapely.geometry import LineString, box
+from shapely import make_valid
+from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
-from .geometry import CURVE_STEP_PT, centerlines, fill_geometry, stroke_geometry
+from .geometry import CURVE_STEP_PT, areal, centerlines, fill_geometry, stroke_geometry
 
 PT_TO_MM = 25.4 / 72.0
 
@@ -36,6 +38,9 @@ MIN_SCREEN_DOTS = 16
 SCREEN_SIZE_TOLERANCE = 0.05
 
 Rect = tuple[float, float, float, float]
+# A window on the page, in mm from its top-left corner: 4 numbers are a rectangle (two
+# opposite corners), 6 or more are a polygon (x, y of each corner, in order).
+Window = tuple[float, ...]
 
 
 @dataclass
@@ -56,9 +61,24 @@ class Primitive:
 class Scene:
     path: Path
     page_number: int
-    page_rect: Rect  # working area in PDF points: the page, or the crop
+    page_rect: Rect  # working area in PDF points: the page, or the bounding box of the window
     primitives: list[Primitive]  # sorted by paint order
     stats: dict
+    window: BaseGeometry | None = None  # the window itself (rectangle or polygon), PDF points
+    page_origin: tuple[float, float] = (0.0, 0.0)  # top-left corner of the page, PDF points
+
+    def page_point(self, x_mm: float, y_mm: float) -> tuple[float, float]:
+        """A point given in mm from the page's top-left corner (like --crop), in PDF points."""
+        return self.page_origin[0] + x_mm / PT_TO_MM, self.page_origin[1] + y_mm / PT_TO_MM
+
+    @property
+    def area(self) -> BaseGeometry:
+        """The part of the page that is converted."""
+        return self.window if self.window is not None else box(*self.page_rect)
+
+    @property
+    def is_polygon(self) -> bool:
+        return self.window is not None and self.window.area < self.window.envelope.area * (1 - 1e-9)
 
     @property
     def width_pt(self) -> float:
@@ -72,37 +92,61 @@ class Scene:
 # ----------------------------------------------------------------------------- public
 
 
-def crop_rect_pt(page_rect, crop_mm: Rect | None) -> Rect:
-    """Working area in PDF points: the page, or ``crop_mm`` (x0, y0, x1, y1 in mm from
-    the page's top-left corner) clipped to the page."""
+# "1:5000", "1 : 4 000", "1:10.000" printed on the page (title block, legend)
+_SCALE_TEXT = re.compile(r"(?<![\d.,])1\s*:\s*(\d{1,3}(?:[ .\u00a0\u202f]\d{3})+|\d{3,6})(?![\d,])")
+
+
+def read_map_scale(pdf_path: str | Path, page_number: int = 0) -> float:
+    """The map scale printed on the page ("Scala 1: 5000" gives 5000), or 0 if the page
+    states none, or more than one."""
+    with pymupdf.open(pdf_path) as doc:
+        text = doc[page_number].get_text()
+    found = {int(re.sub(r"\D", "", m)) for m in _SCALE_TEXT.findall(text)}
+    found = {v for v in found if 500 <= v <= 100_000}
+    return float(found.pop()) if len(found) == 1 else 0.0
+
+
+def window_pt(page_rect, crop_mm: Window | None) -> BaseGeometry:
+    """The window in PDF points, clipped to the page: the whole page, a rectangle
+    (4 numbers) or a polygon (6 or more), in mm from the page's top-left corner."""
+    page = box(*page_rect)
     if crop_mm is None:
-        return tuple(page_rect)
-    x0, y0, x1, y1 = (v / PT_TO_MM for v in crop_mm)
-    px0, py0, px1, py1 = page_rect
-    r = (
-        max(px0, px0 + min(x0, x1)),
-        max(py0, py0 + min(y0, y1)),
-        min(px1, px0 + max(x0, x1)),
-        min(py1, py0 + max(y0, y1)),
-    )
-    if r[2] <= r[0] or r[3] <= r[1]:
-        raise ValueError(f"crop {crop_mm} mm lies outside the page")
-    return r
+        return page
+    v = [float(x) / PT_TO_MM for x in crop_mm]
+    px0, py0 = page_rect[0], page_rect[1]
+    if len(v) == 4:
+        g = box(px0 + min(v[0], v[2]), py0 + min(v[1], v[3]), px0 + max(v[0], v[2]), py0 + max(v[1], v[3]))
+    elif len(v) >= 6 and len(v) % 2 == 0:
+        g = areal(make_valid(Polygon([(px0 + x, py0 + y) for x, y in zip(v[::2], v[1::2])])))
+    else:
+        raise ValueError(f"a window is 4 numbers (two corners) or 3 or more x,y points, not {len(v)} numbers")
+    g = areal(g.intersection(page))
+    if g.is_empty or g.area <= 0:
+        raise ValueError(f"window {crop_mm} mm lies outside the page")
+    return g
 
 
-def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None = None,
+def crop_rect_pt(page_rect, crop_mm: Window | None) -> Rect:
+    """Bounding box of the window, in PDF points."""
+    return tuple(window_pt(page_rect, crop_mm).bounds)
+
+
+def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | None = None,
                curve_step_mm: float | None = None) -> Scene:
-    """Read one page (optionally only ``crop_mm`` of it) into a Scene. Curves are drawn
-    with chords of ``curve_step_mm`` (on the PDF page; default 0.035 mm)."""
+    """Read one page (optionally only the window ``crop_mm`` of it: a rectangle or a
+    polygon) into a Scene. Curves are drawn with chords of ``curve_step_mm`` (on the PDF
+    page; default 0.035 mm)."""
     step = curve_step_mm / PT_TO_MM if curve_step_mm else CURVE_STEP_PT
     pdf_path = Path(pdf_path)
     with pymupdf.open(pdf_path) as doc:
         page = doc[page_number]
-        area = crop_rect_pt(page.rect, crop_mm)
+        window = window_pt(page.rect, crop_mm)
+        area = tuple(window.bounds)
+        origin = (float(page.rect.x0), float(page.rect.y0))
         drawings = page.get_drawings(extended=True)
 
     paints, clips = _attach_clip_stacks(drawings)
-    clip_region = _ClipRegions(clips, box(*area), step)
+    clip_region = _ClipRegions(clips, window, step)
     screens = _find_dot_screens(paints)
 
     prims: list[Primitive] = []
@@ -130,8 +174,9 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Rect | None 
         "dot_screens_in_area": sum(p.kind == "dots" for p in prims),
         "primitives_in_area": len(prims),
         "area_pt": [round(v, 4) for v in area],
+        "window_points": 0 if crop_mm is None else len(crop_mm) // 2,
     }
-    return Scene(pdf_path, page_number, area, prims, stats)
+    return Scene(pdf_path, page_number, area, prims, stats, window if crop_mm is not None else None, origin)
 
 
 # ----------------------------------------------------------------------------- steps

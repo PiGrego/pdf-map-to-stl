@@ -192,7 +192,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const CLASSES = MODEL.classes;
 const BY_NAME = Object.fromEntries(CLASSES.map(c => [c.class, c]));
 const TEXTURES = MODEL.layers.filter(l => l.role === "texture");
-const FIXED = MODEL.layers.filter(l => l.role === "braille" || l.role === "north" || l.role === "frame");
+const FIXED_ROLES = ["braille", "north", "frame", "edge", "pin"];  // fixed size: not tuned here
+const FIXED = MODEL.layers.filter(l => FIXED_ROLES.includes(l.role));
 const TEXTURE_TEXT = Object.fromEntries(MODEL.texture_library.map(t => [t.name, t.text]));
 const initial = {
   base: MODEL.base_mm,
@@ -590,7 +591,7 @@ function apply(v) {                        // v = { base, heights: {class: mm}, 
   for (const l of MODEL.layers) {
     const m = meshes[l.class];
     m.visible = !v.hidden[l.class];
-    if (l.role === "braille" || l.role === "north" || l.role === "frame") {
+    if (FIXED_ROLES.includes(l.role)) {
       m.position.z = base * exag; m.scale.z = l.height_mm * exag; continue;
     }
     if (l.role === "texture") {

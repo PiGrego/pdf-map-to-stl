@@ -1,8 +1,8 @@
 """Tactile readability: generalisation, checks, textures, legend and model features."""
 
-from pathlib import Path
 
 import pytest
+from sample_map import CROP_MM, NAVILE, TEST_WIDTH_MM
 from shapely.geometry import Point, box
 
 from pdf_map_to_stl.config import Texture, load_config
@@ -11,8 +11,6 @@ from pdf_map_to_stl.legend import build_legend, classes_in_model
 from pdf_map_to_stl.model3d import Layer, TactileModel, build_solid, texture_geometry
 from pdf_map_to_stl.pipeline import BuildOptions, build
 from pdf_map_to_stl.tactile_check import check_model
-
-SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "sample.pdf"
 
 
 def model(layers, w=60.0, h=40.0):
@@ -127,13 +125,13 @@ def test_legend_has_one_sample_per_class_and_prints(cfg):
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     out = tmp_path_factory.mktemp("built")
-    return out, build(BuildOptions(SAMPLE, out, validate=False))
+    return out, build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=out, validate=False))
 
 
 def test_model_has_north_symbols_and_braille_title(built):
     _, r = built
     assert any(lyr["class"] == "north" and lyr["parts"] == 6 for lyr in r["layers"])  # 2 symbols x (2 dots + ring)
-    assert r["model"]["braille_title"] == "sample"
+    assert r["model"]["braille_title"].startswith("orienteering map")
     _, y0, _, y1 = r["model"]["map_box_mm"]
     assert 0 < y0 and y1 < r["model"]["height_mm"]  # margins below and above the map
     assert r["legend_stl"]["genus"] == 0
@@ -158,7 +156,7 @@ def test_generalisation_leaves_few_problems_on_the_sample(built):
 
 
 def test_test_tile_has_no_title_strip(tmp_path):
-    r = build(BuildOptions(SAMPLE, tmp_path, region_mm=(40, 30, 70, 50), validate=False))
+    r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, region_mm=(40, 30, 70, 50), validate=False))
     assert r["model"]["braille_title"] == ""
     assert r["model"]["height_mm"] == pytest.approx(20)
 

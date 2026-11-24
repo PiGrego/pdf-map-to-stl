@@ -22,7 +22,8 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
 
 ```
  MAP.pdf
-   │  scene.py      every paint operation → polygon, cut by its clip paths and the crop;
+   │  scene.py      every paint operation → polygon, cut by its clip paths and the window
+   │                (a rectangle or a polygon chosen in pick.html);
    │                dot-grid patterns (ISOM 402…) → one area = their clip outline
    ▼
  primitives (ordered)
@@ -34,11 +35,13 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │                objects: kept as drawn (walls, hedges, trees sit on the terrain)
    ▼
  map model (PDF points)
+   │  size.py       suggested print size from the passages and parts of the map
    │  model3d.py    scale to print size, redraw lines along their centre (min width,
    │                caps and joins from [smoothing])
    │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
    │                areas, merge walls that are too close, (round corners)
-   │  model3d.py    standard point symbols, textures, Braille title, north symbols;
+   │  model3d.py    standard point symbols, textures, Braille title, north symbols,
+   │                position pins and their coordinates in Braille (geo.py);
    │                extrude and merge
    ▼
  tactile model (mm) ──▶ model.stl (one body)
@@ -71,6 +74,8 @@ arguments.
 | `config.py` | loads the config and settings files; matches a primitive to a class; writes settings_used.toml | `load_config`, `Config.classify`, `Config.shown_as`, `settings_dict` |
 | `compose.py` | visible terrain + objects | `build_map` |
 | `model3d.py` | layers in mm, textures, standard symbols, Braille title, north symbols, solid, STL | `build_layers`, `build_solid`, `write_stl` |
+| `geo.py` | position points: coordinates in any form, pins, the distance check | `parse_geo`, `pins`, `check_points` |
+| `size.py` | suggested print size from the map's details and scale | `suggest_size` |
 | `generalize.py` | tactile simplification and optional smoothing of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |
 | `legend.py` | the tactile legend plate and its text | `build_legend`, `classes_in_map` |
@@ -94,6 +99,12 @@ on a page-wide grid, trimmed by a clip path that is the area outline. `scene.py`
 detects a clip whose content is only same-colour, same-size dots and uses the clip
 outline as the area. The dot diameter and spacing identify the symbol (402 yellow dots,
 412 green, 415 black: the ISOM 2000 sizes times the map's enlargement).
+
+**A window, not the whole page.** A map page also holds a title, control descriptions,
+logos and a north arrow printed on top of the map; converted, they would become terrain.
+So the operator always picks the part to convert: a rectangle, or a polygon that follows
+the area of interest (`Scene.window`). Everything outside it is dropped in `scene.py`;
+the model keeps a rectangular plate, with a raised line along a polygon's edge.
 
 **Terrain vs objects.** Terrain classes (paved, open land, forest, buildings, water…)
 tile the map: every point has exactly one. They come from replaying the paint order.
@@ -136,13 +147,22 @@ same. Walkable ground is low, barriers are high, water is recessed. The threshol
 `[tactile]` (1 mm features, 3 mm gaps, 0.5 mm steps) are common tactile-graphics
 starting values; they should be confirmed with readers.
 
+**The details decide the size.** A tactile map can be printed at any size, so the
+size is not a fixed default: `size.py` measures every passage and raised part of the
+composed map and suggests the size at which 90 % of them meet the tactile rules, within
+100 to 1000 mm, with a one-piece alternative when the plate exceeds the printer bed.
+Generalisation then only has to fix the remaining few. The measurement runs on the map
+as drawn and takes seconds, so `pdf-map-to-stl size` can answer before a build.
+
 **Generalise, then check.** `generalize.py` does the safe, common simplifications a
 tactile cartographer would do by hand, always moving area between terrain classes so
 they keep tiling the map. `tactile_check.py` then reports whatever is still too fine,
 with locations, instead of silently hiding it.
 
 **Everything a reader needs is on the plate.** North symbols, Braille title and scale,
-separate Braille legend; Braille is placed at standard physical size, never scaled.
+separate Braille legend, and optionally where the map is on Earth (position pins with
+their coordinates in Braille, for navigation apps); Braille is placed at standard
+physical size, never scaled.
 
 **Heights are confirmed by touch.** `tuner.html` lets the operator try heights, switches,
 textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
@@ -153,7 +173,7 @@ textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 | Where | Units | Origin | y axis |
 |---|---|---|---|
 | PDF / scene / compose | points (1/72 in) | page top-left | down |
-| `--crop` | mm on the PDF page | page top-left | down |
+| `--crop` (window: rectangle or polygon) | mm on the PDF page | page top-left | down |
 | model / STL / `--region` | mm on the print | model bottom-left | up |
 
 `model3d._to_model` is the one place that converts PDF points to model millimetres.
@@ -180,6 +200,7 @@ textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 ## Tests
 
 `pytest` runs unit tests (geometry, Braille, generalisation, tactile checks, parts,
-legend) and end-to-end checks on `samples/sample.pdf` (about three minutes). Tests on
-`samples/orienteering-map-sample-Navile.pdf` are skipped if that file is missing.
+legend) and end-to-end checks on `samples/orienteering-map-sample-Navile.pdf`, a real
+sprint map, on a 50 x 37 mm window of it (`tests/sample_map.py`), mostly at a fixed
+120 mm print width so they stay fast; `tests/test_size.py` checks the suggested size.
 `ruff check src tests` must pass.

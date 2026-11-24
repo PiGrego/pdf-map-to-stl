@@ -1,7 +1,8 @@
-"""Write ``pick.html``: the whole map page as an image, to choose the area to convert.
+"""Write ``pick.html``: the whole map page as an image, to choose the window to convert.
 
-Drag a rectangle on the page; the page shows the ``--crop`` values (mm from the page's
-top-left corner) and the full ``build`` command to run.
+Drag a rectangle, or click the corners of a polygon, on the page (or type the values);
+the page shows the ``--crop`` values (mm from the page's top-left corner) and the full
+``build`` command to run.
 """
 
 from __future__ import annotations

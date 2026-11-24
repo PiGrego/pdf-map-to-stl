@@ -1,6 +1,7 @@
 """The whole conversion, step by step. Start reading the project here.
 
     PDF ──scene──▶ primitives ──config rules──▶ classes ──compose──▶ visible terrain + objects
+        ──size─────▶ suggested print size (from the map's details and scale)
         ──model3d──▶ tactile layers (mm): generalised, textures, Braille title, north symbols
         ──▶ model.stl (one body) + parts/*.stl (one per layer, for the slicer)
         ──legend───▶ legend.stl + legend_parts/*.stl
@@ -21,12 +22,14 @@ from pathlib import Path
 from .compose import build_map, classify
 from .config import Config, load_config, settings_dict, to_toml
 from .describe import describe, tactile_scale, write_description
+from .geo import MAX_POINTS, GeoPoint, check_points
 from .legend import DEFAULT_TITLE, build_legend, classes_in_map, classes_in_model, legend_text
 from .model3d import TactileModel, build_layers, build_solid, layer_summary, write_stl
 from .parts import build_parts, write_parts
 from .preview import check_image, relief_image
 from .report import symbol_inventory, write_csv, write_json, write_layers_svg
-from .scene import PT_TO_MM, load_scene
+from .scene import PT_TO_MM, Window, load_scene, read_map_scale
+from .size import SizeSuggestion, describe_size, suggest_size
 from .tactile_check import check_model
 from .tuner import write_tuner
 from .validate import class_colours, validate
@@ -54,8 +57,8 @@ class BuildOptions:
     config: Path | None = None  # symbol rules + classes; default config/default.toml
     heights: Path | None = None  # heights.toml from the tuner (same as a settings file)
     page: int = 0
-    crop_mm: Rect | None = None  # part of the PDF page, mm from its top-left corner
-    width_mm: float | None = None  # printed model width; overrides the config
+    crop_mm: Window | None = None  # window on the PDF page (rectangle or polygon), mm from its top-left
+    width_mm: float | None = None  # printed map width; overrides the config and the suggested size
     region_mm: Rect | None = None  # test tile on the map, mm from its bottom-left corner
     title: str | None = None  # Braille title; None = from config ("auto" = file name)
     map_scale: float | None = None  # scale of the printed map, e.g. 5000 for 1:5000
@@ -63,6 +66,15 @@ class BuildOptions:
     validate: bool = True
     settings: tuple = ()  # settings files or profile names, applied in order after the config
     overrides: tuple = ()  # "section.key=value" strings, applied last
+    geo: tuple[GeoPoint, ...] = ()  # position points: where the map is on Earth (geo.py)
+
+
+def describe_window(crop_mm) -> str:
+    """The window in words, for the description."""
+    v = [f"{x:g}" for x in crop_mm]
+    if len(v) == 4:
+        return f"window {v[0]} to {v[2]} mm across and {v[1]} to {v[3]} mm down the page"
+    return f"polygon window of {len(v) // 2} points (mm from the page's top-left: {','.join(v)})"
 
 
 def resolve_title(option: str | None, config_title: str, pdf: Path) -> str:
@@ -70,15 +82,33 @@ def resolve_title(option: str | None, config_title: str, pdf: Path) -> str:
     return pdf.stem.replace("_", " ").replace("-", " ") if title == "auto" else title
 
 
-def _set_size(cfg: Config, o: BuildOptions, scene_width_pt: float) -> None:
+def set_map_scale(cfg: Config, map_scale: float | None, pdf: Path, page: int) -> str:
+    """The printed map's scale: --map-scale, else the config, else read from the page."""
+    if map_scale is not None:
+        cfg.map_scale = map_scale
+        return "--map-scale"
+    if cfg.map_scale:
+        return "settings"
+    if cfg.read_map_scale:
+        cfg.map_scale = read_map_scale(pdf, page)
+        return "read from the page" if cfg.map_scale else "unknown"
+    return "unknown"
+
+
+def _set_size(cfg: Config, o: BuildOptions, scene_width_pt: float, sg: SizeSuggestion) -> str:
+    """Set the printed map width; returns where it came from."""
     if o.width_mm:
         cfg.width_mm = o.width_mm
-    if o.map_scale is not None:
-        cfg.map_scale = o.map_scale
+        return "--width"
     if o.scale:
         if not cfg.map_scale:
             raise ValueError("--scale needs the scale of the printed map: add --map-scale (e.g. 5000)")
         cfg.width_mm = scene_width_pt * PT_TO_MM * cfg.map_scale / o.scale
+        return "--scale"
+    if cfg.width_mm:
+        return "output.width_mm"
+    cfg.width_mm = sg.width_mm
+    return "suggested"
 
 
 def _write_model(t: TactileModel, out: Path, name: str, parts_dir: str, cfg: Config) -> tuple[dict, list[dict]]:
@@ -119,6 +149,8 @@ def rebuild_command(o: BuildOptions) -> str:
         cmd += ["-c", _arg(o.config)]
     if o.title is not None:
         cmd += ["--title", f'"{o.title}"']
+    for p in o.geo:
+        cmd += ["--geo", f"{p.x_mm:g},{p.y_mm:g},{p.lat:.7f},{p.lon:.7f}"]
     cmd += ["--settings", _arg(o.out / "settings_used.toml"), "--settings", "settings.toml", "-o", _arg(o.out)]
     return " ".join(cmd)
 
@@ -132,28 +164,36 @@ def build(o: BuildOptions) -> dict:
 
     # 2. Scene: every paint operation of the page (or crop) as a clipped polygon.
     scene = load_scene(o.pdf, o.page, o.crop_mm, cfg.smoothing.curve_step_mm)
-    _set_size(cfg, o, scene.width_pt)
-    write_settings(cfg, o.out / "settings_used.toml", o.pdf.name)
+    map_scale_source = set_map_scale(cfg, o.map_scale, o.pdf, o.page)
 
     # 3. Classify and compose: which terrain is visible where; which objects sit on top.
     m = build_map(scene, cfg)
 
-    # 4. Tactile model and legend at print scale; one body and one part per layer each.
+    # 4. Size: suggested from the map's details; --width, --scale or the settings override it.
+    suggestion = suggest_size(m, cfg)
+    size_source = _set_size(cfg, o, scene.width_pt, suggestion)
+    size_lines = describe_size(suggestion, cfg, cfg.width_mm, size_source)
+    write_settings(cfg, o.out / "settings_used.toml", o.pdf.name)
+
+    # 5. Tactile model and legend at print scale; one body and one part per layer each.
     title = resolve_title(o.title, cfg.title, o.pdf)
     if title and cfg.map_scale:
         title += f" 1:{cfg.map_scale * scene.width_pt * PT_TO_MM / cfg.width_mm:.0f}"
-    t = build_layers(m, cfg, o.region_mm, title)
+    if len(o.geo) > MAX_POINTS:
+        raise ValueError(f"at most {MAX_POINTS} position points (--geo)")
+    t = build_layers(m, cfg, o.region_mm, title, o.geo)
     stl, parts = _write_model(t, o.out, "model", "parts", cfg)
     legend = build_legend(classes_in_model(t, cfg), cfg)
     legend_stl, legend_parts = _write_model(legend, o.out, "legend", "legend_parts", cfg)
 
-    # 5. Can it be read by touch?
+    # 6. Can it be read by touch?
     check = check_model(t, cfg)
 
-    # 6. Things to read and look at.
+    # 7. Things to read and look at.
     colours = class_colours(cfg, m.background_class)
-    source = f"{o.pdf.name}, page {o.page + 1}" + (f", area {o.crop_mm} mm" if o.crop_mm else "")
-    write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items), o.out / "description.txt")
+    source = f"{o.pdf.name}, page {o.page + 1}" + (f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
+    write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines,
+                               check_points(list(o.geo), cfg.map_scale)), o.out / "description.txt")
     relief_image(t, colours).save(o.out / "relief_preview.png")
     relief_image(legend, colours).save(o.out / "legend_preview.png")
     check_image(t, check.problems).save(o.out / "tactile_check.png")
@@ -182,8 +222,13 @@ def build(o: BuildOptions) -> dict:
             "map_box_mm": [round(v, 3) for v in t.map_box],
             "scale_model_mm_per_pdf_mm": round(t.scale * 72 / 25.4, 4),
             "tactile_scale": round(tactile_scale(cfg, t)),
+            "map_scale": cfg.map_scale,
+            "map_scale_source": map_scale_source,
             "braille_title": t.title,
         },
+        "size": {**suggestion.as_dict(), "used_width_mm": round(cfg.width_mm, 3), "source": size_source,
+                 "lines": size_lines},
+        "positions": t.positions,
         "layers": layer_summary(t),
         "stl": stl,
         "parts": parts,
@@ -200,6 +245,16 @@ def build(o: BuildOptions) -> dict:
     return report
 
 
+def suggest(pdf: Path, page: int = 0, crop_mm: Window | None = None, config: Path | None = None,
+            settings: tuple = (), overrides: tuple = (), map_scale: float | None = None) -> tuple[SizeSuggestion, list[str]]:
+    """Only the suggested size of a map (or part of it), without building: quick."""
+    cfg = load_config(config, None, settings, overrides)
+    scene = load_scene(pdf, page, crop_mm, cfg.smoothing.curve_step_mm)
+    set_map_scale(cfg, map_scale, pdf, page)
+    sg = suggest_size(build_map(scene, cfg), cfg)
+    return sg, describe_size(sg, cfg, sg.width_mm, "")
+
+
 @dataclass
 class LegendOptions:
     pdf: Path
@@ -207,7 +262,7 @@ class LegendOptions:
     config: Path | None = None
     heights: Path | None = None
     page: int = 0
-    crop_mm: Rect | None = None
+    crop_mm: Window | None = None
     title: str = DEFAULT_TITLE
     settings: tuple = ()
     overrides: tuple = ()
