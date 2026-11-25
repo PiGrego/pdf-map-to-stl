@@ -23,7 +23,7 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
 ```
  MAP.pdf
    │  scene.py      every paint operation → polygon, cut by its clip paths and the window
-   │                (a rectangle or a polygon chosen in pick.html);
+   │                (a rectangle, a polygon or a fixed-size plate chosen in pick.html);
    │                dot-grid patterns (ISOM 402…) → one area = their clip outline
    ▼
  primitives (ordered)
@@ -42,7 +42,7 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
    │                areas, merge walls that are too close, (round corners)
    │  model3d.py    standard point symbols, textures, Braille title, north symbols,
-   │                position pins and their coordinates in Braille (geo.py);
+   │                scale bar, position pins and their coordinates in Braille (geo.py);
    │                extrude and merge
    ▼
  tactile model (mm) ──▶ model.stl (one body)
@@ -88,7 +88,7 @@ arguments.
 | `validate.py` | pixel check against the PDF | `validate` |
 | `preview.py`, `report.py` | images, CSV, SVG, JSON | |
 | `tuner.py` + `tuner_template.html` | interactive tuner: heights, switches, textures, shapes | `write_tuner` |
-| `pick.py` + `pick_template.html` | interactive area picker | `write_picker` |
+| `pick.py` + `pick_template.html` | interactive area picker: rectangle, polygon or fixed-size plate | `write_picker` |
 
 ## Key decisions
 
@@ -107,7 +107,10 @@ outline as the area. The dot diameter and spacing identify the symbol (402 yello
 logos and a north arrow printed on top of the map; converted, they would become terrain.
 So the operator always picks the part to convert: a rectangle, or a polygon that follows
 the area of interest (`Scene.window`). Everything outside it is dropped in `scene.py`;
-the model keeps a rectangular plate, with a raised line along a polygon's edge.
+the model keeps a rectangular plate, with a raised line along a polygon's edge. A plate
+of fixed size (`--plate`, "Fixed size" in pick.html) is a rectangle computed in
+`pipeline.plate_window`: at the chosen scale it fills the plate, less the margins that
+`model3d.margins` gives for the title, north symbols and coordinates.
 
 **Terrain vs objects.** Terrain classes (paved, open land, forest, buildings, water…)
 tile the map: every point has exactly one. They come from replaying the paint order.
@@ -163,7 +166,7 @@ they keep tiling the map. `tactile_check.py` then reports whatever is still too 
 with locations, instead of silently hiding it.
 
 **Everything a reader needs is on the plate.** North symbols, Braille title and scale,
-separate Braille legend, and optionally where the map is on Earth (position pins with
+a scale bar to feel distances, separate Braille legend, and optionally where the map is on Earth (position pins with
 their coordinates in Braille, for navigation apps); Braille is placed at standard
 physical size, never scaled.
 

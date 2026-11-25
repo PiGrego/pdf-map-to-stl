@@ -1,8 +1,9 @@
 """Write ``pick.html``: the whole map page as an image, to choose the window to convert.
 
 Drag a rectangle, or click the corners of a polygon, on the page (or type the values);
-the page shows the ``--crop`` values (mm from the page's top-left corner) and the full
-``build`` command to run.
+or choose "Fixed size": a plate of a given size (a printer bed) at a given scale, placed
+with a click. The page shows the ``--crop`` values (mm from the page's top-left corner)
+and the full ``build`` command to run.
 """
 
 from __future__ import annotations
@@ -14,7 +15,9 @@ from pathlib import Path
 
 import pymupdf
 
-from .scene import PT_TO_MM
+from .config import load_config
+from .model3d import margins
+from .scene import PT_TO_MM, read_map_scale
 
 PREVIEW_LONG_SIDE_PX = 2400
 
@@ -26,12 +29,15 @@ def write_picker(pdf: Path, out_html: Path, page_number: int = 0) -> None:
         zoom = PREVIEW_LONG_SIDE_PX / max(r.width, r.height)
         png = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).tobytes("png")
         pages = len(doc)
+    usual = margins(load_config(), 1000.0, "title", metres_per_mm=1.0)  # one line of title, north symbols, bar
     data = {
         "pdf": str(pdf),
         "page": page_number,
         "pages": pages,
         "width_mm": round(r.width * PT_TO_MM, 2),
         "height_mm": round(r.height * PT_TO_MM, 2),
+        "map_scale": read_map_scale(pdf, page_number) or None,  # for "Fixed size"; typed if not printed
+        "margins_mm": [round(usual.top, 2), round(usual.bottom, 2)],
         "image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
     }
     template = resources.files(__package__).joinpath("pick_template.html").read_text(encoding="utf-8")

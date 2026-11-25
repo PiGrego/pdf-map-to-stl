@@ -1,6 +1,7 @@
 """Command line.
 
-    pdf-map-to-stl pick   MAP.pdf             choose the window to convert: rectangle or polygon (pick.html)
+    pdf-map-to-stl pick   MAP.pdf             choose the window to convert: rectangle, polygon or
+                                              fixed-size plate (pick.html)
     pdf-map-to-stl build  MAP.pdf [options]   convert to STL: one body + one STL per layer,
                                               legend, description, tuner.html, previews
     pdf-map-to-stl legend MAP.pdf [options]   stand-alone tactile legend of every symbol in a map
@@ -14,6 +15,7 @@ build with --settings FILE (or a profile name: no_textures, as_drawn, heights_on
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from .geo import parse_geo
@@ -38,6 +40,19 @@ def _window(text: str) -> tuple[float, ...]:
     if len(v) != 4 and (len(v) < 6 or len(v) % 2):
         raise argparse.ArgumentTypeError("expected x0,y0,x1,y1 (a rectangle) or x,y of 3 or more points (a polygon)")
     return v
+
+
+def _plate(text: str) -> tuple[float, float]:
+    """--plate: W,H in mm (170,170 or 170x170), or one number for a square plate."""
+    try:
+        v = [float(x) for x in re.split(r"[,x\u00d7]", text.lower()) if x.strip()]
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("expected the plate size in mm: W,H, or one number for a square") from e
+    if len(v) == 1:
+        v = v * 2
+    if len(v) != 2 or min(v) <= 0:
+        raise argparse.ArgumentTypeError("expected the plate size in mm: W,H, or one number for a square")
+    return v[0], v[1]
 
 
 WINDOW_HELP = ("the window to convert, mm from the page's top-left corner: X0,Y0,X1,Y1 for a rectangle, "
@@ -76,7 +91,8 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="pdf-map-to-stl", description="Vector orienteering map PDF -> tactile STL.")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("pick", help="open the map page to choose the window to convert (rectangle or polygon)")
+    p = sub.add_parser("pick", help="open the map page to choose the window to convert "
+                                    "(rectangle, polygon or fixed-size plate)")
     p.add_argument("pdf", type=Path)
     p.add_argument("--page", type=int, default=0, help="page number, from 0")
     p.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>)")
@@ -97,6 +113,10 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--scale", type=float, metavar="N",
                    help="build at this tactile scale, e.g. 1000 for 1:1000, instead of the suggested size; "
                         "the guidebook recommends 1:500 to 1:1000")
+    b.add_argument("--plate", type=_plate, metavar="W,H",
+                   help="a plate of exactly this size in mm, e.g. 170,170 for a 180 mm printer bed (one number: a "
+                        "square). Needs --scale; the window is made to fill the plate, centred where --crop is "
+                        "(pick.html: Fixed size)")
     b.add_argument("--geo", type=_geo, action="append", default=[], metavar="X,Y,LAT,LON",
                    help="a position point: X,Y in mm from the page's top-left corner (as --crop; pick.html "
                         "gives them), and its latitude and longitude (44.51234 or 44°30'44\"N). Marked by pins, "
@@ -150,13 +170,13 @@ def _run(a: argparse.Namespace) -> None:
     if a.command == "pick":
         write_picker(a.pdf, out / "pick.html", a.page)
         print(f"Window picker written to {out / 'pick.html'}.")
-        print("Open it in a browser and draw the window: drag a rectangle, or click the corners of a polygon,")
-        print("or type it in millimetres; then run the command it shows.")
+        print("Open it in a browser and draw the window: drag a rectangle, click the corners of a polygon,")
+        print("or place a plate of fixed size (Fixed size); or type it in millimetres. Then run the command it shows.")
         return
 
     r = build(BuildOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.width, a.region,
                            a.title, a.map_scale, a.scale, not a.no_validate, tuple(a.settings), _overrides(a),
-                           tuple(a.geo)))
+                           tuple(a.geo), a.plate))
     # Plain sentences, one per line: easy to follow with a screen reader.
     m, c = r["model"], r["tactile_check"]
     for line in r["size"]["lines"]:

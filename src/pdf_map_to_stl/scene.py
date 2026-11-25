@@ -106,6 +106,13 @@ def read_map_scale(pdf_path: str | Path, page_number: int = 0) -> float:
     return float(found.pop()) if len(found) == 1 else 0.0
 
 
+def page_size_mm(pdf_path: str | Path, page_number: int = 0) -> tuple[float, float]:
+    """Width and height of the page as it is shown (rotation applied), in mm."""
+    with pymupdf.open(pdf_path) as doc:
+        r = doc[page_number].rect
+    return r.width * PT_TO_MM, r.height * PT_TO_MM
+
+
 def window_pt(page_rect, crop_mm: Window | None) -> BaseGeometry:
     """The window in PDF points, clipped to the page: the whole page, a rectangle
     (4 numbers) or a polygon (6 or more), in mm from the page's top-left corner."""
