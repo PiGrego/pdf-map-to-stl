@@ -102,6 +102,30 @@ navigation app.
 | `pin_height_mm` | `4.0` | above the plate, higher than anything else on the map, so they are easy to find |
 | `decimals` | `5` | decimals of the degrees in Braille; 5 is about 1 m |
 
+### `[relief]`: slopes as terraces (experimental, off by default)
+
+With `--set relief.enabled=true`, every band between two contour lines is raised one
+step above the band below it, like the "layer cake" relief of tactile and 3D maps, so a
+reader can feel a hill rise and a slope fall. Everything on the ground rises with its
+band. In `parts/` every part rises too, and the plate fills the space under them.
+
+A map does not print the height of each band, so the direction is inferred: the bands
+with water (lakes, canals) are the lowest, and the ground rises at every contour going
+away from them, except where a slope tick on the map says it falls. This fits a park or
+a hillside that slopes one way, with hills inside closed contours; a valley between two
+hills without slope ticks can come out upside down. Check `relief_levels.png` (darker =
+higher) and the SLOPES section of `description.txt`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | `false` | slopes as terraces |
+| `step_mm` | `0.4` | height of one contour step on the model |
+| `max_levels` | `12` | at most this many steps |
+| `classes` | `["contour"]` | classes whose lines are contours |
+| `min_width_mm` | `0.2` | thinner lines (dashed form lines) are left out (mm on the page) |
+| `close_gaps_mm` | `10` | contour lines interrupted by paths or buildings are joined across gaps up to this (mm on the page) |
+| `low` | `"water"` | how low ground is found: the bands with water |
+
 ### `[features]`: what the model contains
 
 | Setting | Default | What it does |

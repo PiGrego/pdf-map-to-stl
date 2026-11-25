@@ -52,6 +52,19 @@ pin_mm = 3.0              # pin diameter
 pin_height_mm = 4.0       # above the plate: higher than anything else
 decimals = 5              # decimals of the degrees in Braille (5 = about 1 m)
 
+# ---------------------------------------------------------------- slopes (experimental)
+# Off by default. On: every band between two contour lines is raised step_mm above the
+# band below it, so hills and slopes can be felt (relief.py). The lowest bands are those
+# with water; check the result (description.txt, relief_levels.png).
+[relief]
+enabled = false
+step_mm = 0.4             # height of one contour step on the model
+max_levels = 12           # at most this many steps
+classes = ["contour"]     # classes whose lines are contours
+min_width_mm = 0.2        # thinner lines (dashed form lines) are left out (mm on the page)
+close_gaps_mm = 10        # contours interrupted by paths are joined across gaps up to this (page mm)
+low = "water"             # the bands with lakes or canals are the lowest
+
 # ---------------------------------------------------------------- features
 # What the model contains besides the map's own areas and objects.
 [features]

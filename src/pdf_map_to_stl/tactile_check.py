@@ -107,7 +107,7 @@ def check_model(t: TactileModel, cfg: Config) -> CheckResult:
             "examples_mm": _examples(allspots),
         }
 
-    max_top = max([lyr.height_mm for lyr in t.layers] + [0.0])
+    max_top = max([lyr.height_mm for lyr in t.layers] + [0.0]) + max((dz for _, dz in t.relief), default=0.0)
     summary = {
         "rules": {
             "min_feature_mm": w,

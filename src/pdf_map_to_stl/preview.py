@@ -48,6 +48,8 @@ def relief_image(t: TactileModel, colours: dict, px_per_mm: float = 8.0) -> Imag
             rgb[sel] = np.array(colours.get(layer.on, (255, 255, 255))) * TEXTURE_SHADE
         else:
             rgb[sel] = colours.get(layer.cls, (255, 255, 255))
+    for area, dz in t.relief:  # slopes: terraces lift everything on them
+        z[_mask(area, (w, h), px_per_mm) & plate] += dz
     # Lambertian hillshade, light from the north-west.
     gy, gx = np.gradient(z * px_per_mm)
     nx, ny, nz = -gx, gy, np.ones_like(z)
@@ -56,6 +58,19 @@ def relief_image(t: TactileModel, colours: dict, px_per_mm: float = 8.0) -> Imag
     light /= np.linalg.norm(light)
     shade = np.clip((nx * light[0] + ny * light[1] + nz * light[2]) / n, 0, 1)
     out = rgb * np.where(plate, 0.45 + 0.55 * shade, 1.0)[..., None]
+    return Image.fromarray(out.clip(0, 255).astype(np.uint8))
+
+
+def terraces_image(t: TactileModel, colours: dict, px_per_mm: float = 8.0) -> Image.Image:
+    """Slopes: the relief picture, darker where the ground is higher, so the inferred
+    direction of the slopes can be checked at a glance."""
+    base = np.asarray(relief_image(t, colours, px_per_mm), np.float32)
+    size = (base.shape[1], base.shape[0])
+    top = max((dz for _, dz in t.relief), default=1.0)
+    tint = np.zeros(base.shape[:2], np.float32)
+    for area, dz in t.relief:
+        tint[_mask(area, size, px_per_mm)] = dz / top
+    out = base * (1 - 0.6 * tint[..., None])
     return Image.fromarray(out.clip(0, 255).astype(np.uint8))
 
 

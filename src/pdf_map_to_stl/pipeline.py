@@ -26,7 +26,8 @@ from .geo import MAX_POINTS, GeoPoint, check_points
 from .legend import DEFAULT_TITLE, build_legend, classes_in_map, classes_in_model, legend_text
 from .model3d import TactileModel, build_layers, build_solid, layer_summary, write_stl
 from .parts import build_parts, write_parts
-from .preview import check_image, relief_image
+from .preview import check_image, relief_image, terraces_image
+from .relief import find_relief
 from .report import symbol_inventory, write_csv, write_json, write_layers_svg
 from .scene import PT_TO_MM, Window, load_scene, read_map_scale
 from .size import SizeSuggestion, describe_size, suggest_size
@@ -210,7 +211,8 @@ def build(o: BuildOptions) -> dict:
         title += f" 1:{cfg.map_scale * scene.width_pt * PT_TO_MM / cfg.width_mm:.0f}"
     if len(o.geo) > MAX_POINTS:
         raise ValueError(f"at most {MAX_POINTS} position points (--geo)")
-    t = build_layers(m, cfg, o.region_mm, title, o.geo)
+    relief = find_relief(m, cfg) if cfg.relief.enabled else None
+    t = build_layers(m, cfg, o.region_mm, title, o.geo, relief)
     stl, parts = _write_model(t, o.out, "model", "parts", cfg)
     legend = build_legend(classes_in_model(t, cfg), cfg)
     legend_stl, legend_parts = _write_model(legend, o.out, "legend", "legend_parts", cfg)
@@ -222,7 +224,9 @@ def build(o: BuildOptions) -> dict:
     colours = class_colours(cfg, m.background_class)
     source = f"{o.pdf.name}, page {o.page + 1}" + (f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
     write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines,
-                               check_points(list(o.geo), cfg.map_scale)), o.out / "description.txt")
+                               check_points(list(o.geo), cfg.map_scale), relief), o.out / "description.txt")
+    if t.relief:
+        terraces_image(t, colours).save(o.out / "relief_levels.png")
     relief_image(t, colours).save(o.out / "relief_preview.png")
     relief_image(legend, colours).save(o.out / "legend_preview.png")
     check_image(t, check.problems).save(o.out / "tactile_check.png")
@@ -258,6 +262,9 @@ def build(o: BuildOptions) -> dict:
         "size": {**suggestion.as_dict(), "used_width_mm": round(cfg.width_mm, 3), "source": size_source,
                  "lines": size_lines},
         "positions": t.positions,
+        "relief": None if relief is None else {
+            "levels": relief.levels, "lines": relief.lines, "ticks": relief.ticks, "note": relief.note,
+            "lift_mm": [round(dz, 3) for _, dz in t.relief]},
         "layers": layer_summary(t),
         "stl": stl,
         "parts": parts,

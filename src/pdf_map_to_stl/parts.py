@@ -26,7 +26,7 @@ from pathlib import Path
 from manifold3d import Manifold, OpType
 from shapely.ops import unary_union
 
-from .model3d import TactileModel, _cross_section, recess_depth, recess_floors, write_stl
+from .model3d import TactileModel, _cross_section, lift, recess_depth, recess_floors, write_stl
 
 
 @dataclass
@@ -116,6 +116,11 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
         r = spec.dot_diameter_mm / 2
         dots = [Manifold.cylinder(spec.dot_height_mm, r, r * 0.55, 16).translate((x, y, base_z)) for x, y in t.braille_dots]
         parts.append(Part("braille", "braille", _union(dots), base_z + spec.dot_height_mm, "Braille dots"))
+    if t.relief:  # slopes: every part rises with its band; the plate fills the gap under them
+        for p in parts:
+            p.solid = lift(p.solid, t.relief, fill=p.kind == "base")
+            if not p.solid.is_empty():
+                p.z_top_mm = p.solid.bounding_box()[5]
     colours = colours or {}
     for p in parts:
         rgb = colours.get(p.name) or colours.get(p.name.removesuffix("_texture"))

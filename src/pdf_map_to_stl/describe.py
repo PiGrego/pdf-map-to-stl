@@ -131,9 +131,25 @@ def position_lines(t: TactileModel, geo_check: list[str]) -> list[str]:
     return lines + geo_check
 
 
+def relief_lines(relief, cfg: Config, t: TactileModel) -> list[str]:
+    """The slopes (relief.py) in words."""
+    if relief is None:
+        return []
+    if not t.relief:
+        return [f"Slopes are switched on, but not shown: {relief.note or 'every band is at the lowest level'}."]
+    top = max(dz for _, dz in t.relief)
+    return [
+        (f"The ground rises in steps of {cfg.relief.step_mm:g} mm, one at every contour line: {relief.levels} steps, "
+        f"up to {top:g} mm above the lowest ground (relief.step_mm). Everything on the ground rises with it."),
+        ("The lowest ground is where the water is (relief.low); going away from it, the ground rises at every "
+        f"contour, except where a slope tick on the map says it falls ({relief.ticks} ticks found). This is inferred "
+        "from the map, which does not print heights: check it on relief_levels.png (darker = higher)."),
+    ]
+
+
 def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list[str],
              items: list[Classified] | None = None, size_lines: list[str] | None = None,
-             geo_check: list[str] | None = None) -> str:
+             geo_check: list[str] | None = None, relief=None) -> str:
     enlarge = t.scale / PT_TO_MM  # model mm per PDF mm
     lines = [
         f"TACTILE MAP: {t.title or 'untitled'}",
@@ -165,6 +181,8 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
     lines.append(" ".join(hold))
     if t.positions:
         lines += ["", "WHERE IT IS"] + position_lines(t, geo_check or [])
+    if relief is not None:
+        lines += ["", "SLOPES"] + relief_lines(relief, cfg, t)
 
     lines += ["", "LEGEND (also printed as legend.stl)"]
     classes = classes_in_model(t, cfg)

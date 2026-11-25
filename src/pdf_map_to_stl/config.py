@@ -245,6 +245,19 @@ class CheckRules:
 
 
 @dataclass(frozen=True)
+class ReliefRules:
+    """Slopes as terraces (relief.py): off by default, experimental."""
+
+    enabled: bool = False  # true = the ground rises step_mm at every contour line
+    step_mm: float = 0.4  # height of one contour step on the model
+    max_levels: int = 12  # at most this many steps (a safety limit)
+    classes: tuple = ("contour",)  # classes whose lines are contours
+    min_width_mm: float = 0.2  # thinner lines (dashed form lines) are left out (mm on the page)
+    close_gaps_mm: float = 10.0  # contours interrupted by paths are joined across gaps up to this (page mm)
+    low: str = "water"  # how low ground is found: "water" = the bands with lakes or canals
+
+
+@dataclass(frozen=True)
 class PositionRules:
     """Position points (geo.py): pins on the map and their coordinates in Braille."""
 
@@ -281,6 +294,7 @@ class Config:
     generalize: Generalize = field(default_factory=Generalize)
     size: SizeRules = field(default_factory=SizeRules)
     position: PositionRules = field(default_factory=PositionRules)
+    relief: ReliefRules = field(default_factory=ReliefRules)
     validate: CheckRules = field(default_factory=CheckRules)
     recognition: Recognition = field(default_factory=Recognition)
     size_scale_used: float = 1.0  # set per map by estimate_size_scale (compose.classify)
@@ -453,7 +467,7 @@ def _section(kind, d: dict, name: str):
     return kind(**d)
 
 
-TOP_SECTIONS = ("output", "size", "position", "features", "smoothing", "generalize", "tactile", "validate",
+TOP_SECTIONS = ("output", "size", "position", "relief", "features", "smoothing", "generalize", "tactile", "validate",
                 "recognition", "braille", "texture", "class", "symbol")
 
 
@@ -503,6 +517,7 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         generalize=_section(Generalize, data.get("generalize", {}), "generalize"),
         size=_section(SizeRules, data.get("size", {}), "size"),
         position=_section(PositionRules, data.get("position", {}), "position"),
+        relief=_relief(data.get("relief", {})),
         validate=_section(CheckRules, data.get("validate", {}), "validate"),
         recognition=_recognition(data.get("recognition", {})),
         textures=library,
@@ -517,6 +532,15 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         legend_max_height_mm=float(out.legend_max_height_mm),
         sources=list(sources or []),
     )
+
+
+def _relief(d: dict) -> ReliefRules:
+    r = _section(ReliefRules, d, "relief")
+    if r.low != "water":
+        raise ValueError(f"relief.low can only be \"water\" for now, not {r.low!r}")
+    if r.step_mm <= 0 or r.max_levels < 1:
+        raise ValueError("relief.step_mm must be above 0 and relief.max_levels at least 1")
+    return ReliefRules(**{**asdict(r), "classes": tuple(r.classes)})
 
 
 def _recognition(d: dict) -> Recognition:
@@ -614,6 +638,7 @@ def settings_dict(cfg: Config) -> dict:
         },
         "size": asdict(cfg.size),
         "position": asdict(cfg.position),
+        "relief": {**asdict(cfg.relief), "classes": list(cfg.relief.classes)},
         "features": asdict(cfg.features),
         "smoothing": asdict(cfg.smoothing),
         "generalize": asdict(cfg.generalize),

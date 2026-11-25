@@ -81,6 +81,13 @@ its coordinates are written in Braille in the bottom margin, in decimal degrees:
 navigation apps accept. `description.txt` lists them with a web-map link, and with two
 points it checks that their distance agrees with the map (a typing mistake shows there).
 
+## Slopes (experimental)
+
+`--set relief.enabled=true` turns the contour lines into terraces: every band between
+two contours is raised 0.4 mm above the one below, so a hill can be felt. The lowest
+ground is where the water is; check `relief_levels.png` (darker = higher). Details in
+[docs/SETTINGS.md](docs/SETTINGS.md) (`[relief]`).
+
 ## Size and scale
 
 A tactile map can be printed from 100 mm to 1000 mm across; the right size depends on
@@ -147,6 +154,7 @@ It builds at the suggested size (see **Size and scale** above), or at `--scale 1
 | `settings_used.toml` | every setting used; `--settings settings_used.toml` builds the same model again |
 | `tactile_check.png` | where the model is still too thin, too close or too similar to feel |
 | `relief_preview.png`, `legend_preview.png` | quick look at the models |
+| `relief_levels.png` | only with slopes on: the levels the tool inferred, darker = higher |
 | `tuner.html` | heights, on/off, textures and shapes of every layer, with a 3D view |
 | `symbols.csv` | every map symbol found and what it became; **check this for a new map** |
 | `validation_errors.png` | red = model disagrees with the PDF, grey = not checked |
