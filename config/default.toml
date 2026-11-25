@@ -93,6 +93,22 @@ min_gap_mm = 3.0          # raised parts closer than this feel like one
 min_height_step_mm = 0.5  # height differences smaller than this are hard to notice
 min_symbol_area_mm2 = 9.0 # isolated areas smaller than this are hard to identify
 
+# ---------------------------------------------------------------- recognition
+# The [[symbol]] rules below match exact colours and sizes of the map they were made on.
+# These settings let the same rules work on another export of a map. Every symbol they
+# affect is marked in symbols.csv and description.txt, and the build prints a warning.
+[recognition]
+size_scale = "auto"       # sizes in the rules times this; "auto" = measured on the dot screens
+colour_match_de = 10.0    # an unknown colour takes the nearest rule colour within this distance (2 = just visible); 0 = off
+colour_margin_de = 3.0    # ...only if every other rule colour is at least this much farther
+
+# ---------------------------------------------------------------- comparison with the PDF
+# After a build, the class map is compared with the PDF as rendered (validate.py). These
+# say when the result is a warning: something is wrong with the input, not the map.
+[validate]
+min_agreement = 0.99      # warn when the model agrees with the PDF on less of the checked area
+min_checked_share = 0.3   # warn when less of the window could be checked (unknown colours, a scan)
+
 # ---------------------------------------------------------------- Braille
 # Physical size of Braille dots; never scaled with the map.
 [braille]

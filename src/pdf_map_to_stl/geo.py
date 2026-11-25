@@ -38,11 +38,18 @@ class GeoPoint:
 def parse_coordinate(text: str, axis: str) -> float:
     """One latitude (``axis`` "lat") or longitude ("lon") in decimal degrees."""
     t = text.strip().upper().replace(",", ".")
+    if set(re.findall(r"[A-Z]", t)) - set("NSEW"):
+        raise ValueError(f"cannot read the coordinate {text!r}: the only letters allowed are N, S, E and W "
+                         "(write west as W or as a minus sign)")
+    if re.search(r"\d\.\d*\.", t):
+        raise ValueError(f"cannot read the coordinate {text!r}: a number has two decimal points")
     hemis = re.findall(r"[NSEW]", t)
     numbers = re.findall(r"-?\d+(?:\.\d+)?", t)
     if not numbers or len(numbers) > 3 or len(hemis) > 1:
         raise ValueError(f"cannot read the coordinate {text!r}")
     d, *rest = (float(n) for n in numbers)
+    if any(v >= 60 for v in rest):
+        raise ValueError(f"{text!r}: minutes and seconds are below 60")
     value = abs(d) + sum(v / 60**i for i, v in enumerate(rest, 1))
     if d < 0 or (hemis and hemis[0] in "SW"):
         value = -value

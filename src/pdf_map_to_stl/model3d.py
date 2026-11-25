@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import shapely
-from manifold3d import CrossSection, FillRule, Manifold, OpType
+from manifold3d import CrossSection, FillRule, Manifold, Mesh, OpType
 from shapely import affinity
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
@@ -45,6 +45,9 @@ from .scene import PT_TO_MM
 MIN_FLOOR_MM = 0.4  # a recess always leaves at least this much plate under it
 EDGE_PAD_MM = 5.0  # margin around Braille text
 MIN_PRINT_AREA_MM2 = 0.05  # polygons smaller than this are numerical dust, not features
+# Writing the STL (printable_mesh): far below what a printer or a finger can resolve.
+MERGE_MM = 1e-4  # edges shorter than this are collapsed
+SEPARATE_MM = 0.002  # volumes that touch along an edge are moved at most this far apart there
 
 
 @dataclass
@@ -366,9 +369,11 @@ def braille_dot(x: float, y: float, z: float, spec: braille.BrailleSpec) -> Mani
 
 def build_solid(t: TactileModel) -> Manifold:
     """Plate + raised layers - recesses, then textures, north symbols and Braille on top.
-    Textures come after the recesses, so a texture on a recess floor (water waves) stays."""
+    Textures come after the recesses, so a texture on a recess floor (water waves) stays.
+    Where a raised layer (a wall along a lake) crosses a recess, it stands on the recess
+    floor, like the position pins: no tunnel under it."""
     raised = [_cross_section(t.plate).extrude(t.base_mm)]
-    recessed, on_top = [], []
+    recessed, on_top = [], _recess_fills(t)
     for layer in t.layers:
         if layer.role == "braille":
             continue  # built from braille_dots as domed dots below
@@ -400,7 +405,89 @@ def build_solid(t: TactileModel) -> Manifold:
     return solid
 
 
+def recess_floors(t: TactileModel) -> list[tuple[BaseGeometry, float]]:
+    """Each recessed area with the height of its floor above the table."""
+    return [(lyr.geom, t.base_mm - recess_depth(lyr.height_mm, t.base_mm)) for lyr in t.layers
+            if lyr.role == "terrain" and lyr.height_mm < 0]
+
+
+def _recess_fills(t: TactileModel) -> list[Manifold]:
+    """Columns that fill a recess under the raised layers crossing it, from just below its
+    floor to just above the plate (overlapping both, so they fuse)."""
+    fills = []
+    for geom, floor in recess_floors(t):
+        for layer in t.layers:
+            if layer.height_mm <= 0 or layer.role not in ("object", "terrain", "north", "edge"):
+                continue
+            cs = _cross_section(layer.geom.intersection(geom))
+            if not cs.is_empty():
+                fills.append(cs.extrude(t.base_mm - floor + 0.03).translate((0, 0, floor - 0.01)))
+    return fills
+
+
+def _separate_touching(pos: np.ndarray, tri: np.ndarray, step: float) -> tuple[np.ndarray, int]:
+    """Move every vertex that shares its float32 position with another vertex a little
+    toward the middle of its own triangles. manifold3d keeps volumes that touch along an
+    edge (two areas meeting at one corner) apart with such duplicate vertices; an STL
+    reader merges them by position, and the edge would then belong to 4 faces."""
+    _, inv, counts = np.unique(pos.astype(np.float32), axis=0, return_inverse=True, return_counts=True)
+    shared = counts[inv.reshape(-1)] > 1
+    if not shared.any():
+        return pos, 0
+    near = tri[shared[tri].any(axis=1)]  # triangles around the shared vertices
+    corner = pos[near]
+    centre = corner.mean(axis=1)
+    pull = np.zeros_like(pos)
+    shortest = np.full(len(pos), np.inf)
+    for k in range(3):
+        np.add.at(pull, near[:, k], centre - corner[:, k])
+        edge = np.linalg.norm(corner[:, (k + 1) % 3] - corner[:, k], axis=1)
+        np.minimum.at(shortest, near[:, k], edge)
+        np.minimum.at(shortest, near[:, (k + 1) % 3], edge)
+    v = np.nonzero(shared)[0]
+    length = np.linalg.norm(pull[v], axis=1)
+    v, length = v[length > 0], length[length > 0]
+    out = pos.copy()
+    out[v] += pull[v] / length[:, None] * np.minimum(step, 0.1 * shortest[v])[:, None]
+    return out, len(v)
+
+
+def printable_mesh(solid: Manifold, rounds: int = 3) -> tuple[Manifold, int]:
+    """The solid as it can be written to STL (float32) and read back closed by any program.
+
+    Collapses edges shorter than ``MERGE_MM``, moves apart the duplicate vertices where two
+    volumes touch along an edge (``SEPARATE_MM``), and rebuilds the solid from the float32
+    coordinates, until no two vertices share a position. Returns the solid and how many
+    vertices were moved. If a rebuild fails, the solid is returned as it was."""
+    moved = 0
+    s = solid.simplify(MERGE_MM)
+    for _ in range(rounds):
+        m = s.to_mesh64()
+        pos = np.asarray(m.vert_properties)[:, :3].astype(np.float64)
+        tri = np.asarray(m.tri_verts, dtype=np.int64)
+        pos, n = _separate_touching(pos, tri, SEPARATE_MM)
+        if n == 0:
+            return s, moved
+        moved += n
+        rebuilt = Manifold(Mesh(vert_properties=pos.astype(np.float32), tri_verts=tri.astype(np.uint32)))
+        if not str(rebuilt.status()).endswith("NoError") or rebuilt.is_empty():
+            return solid, 0
+        s = rebuilt.simplify(MERGE_MM)
+    return s, moved
+
+
+def open_edges(tri_xyz: np.ndarray) -> int:
+    """Edges not shared by exactly two triangles, after merging vertices by position as an
+    STL reader does (0 = closed, watertight)."""
+    _, inv = np.unique(tri_xyz.reshape(-1, 3), axis=0, return_inverse=True)
+    f = inv.reshape(-1, 3)
+    e = np.sort(np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
+    _, n = np.unique(e, axis=0, return_counts=True)
+    return int((n != 2).sum())
+
+
 def write_stl(solid: Manifold, path: str | Path) -> dict:
+    solid, separated = printable_mesh(solid)
     mesh = solid.to_mesh()
     v = np.asarray(mesh.vert_properties)[:, :3].astype(np.float32)
     f = np.asarray(mesh.tri_verts, dtype=np.int64)
@@ -421,6 +508,8 @@ def write_stl(solid: Manifold, path: str | Path) -> dict:
         "volume_mm3": round(float(solid.volume()), 3),
         "genus": int(solid.genus()),
         "status": str(solid.status()),
+        "open_edges": open_edges(tri),  # in the file as written: 0 = watertight
+        "separated_vertices": separated,
         "bounds_mm": [round(float(x), 3) for x in np.concatenate([v.min(0), v.max(0)])],
     }
 

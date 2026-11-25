@@ -46,6 +46,13 @@ def automatic_changes(cfg: Config, t: TactileModel, items: list[Classified]) -> 
             if c.source and c.source != c.cls:
                 merged[c.cls].add(c.source)
     shown = {lyr.cls for lyr in t.tactile_layers()}
+    if cfg.size_scale_used != 1.0:
+        lines.append(f"Symbol sizes in the rules (line widths, dot screens) multiplied by {cfg.size_scale_used:g} "
+                     f"for this PDF ({cfg.size_scale_note}; recognition.size_scale).")
+    nearest = sorted({c.isom for c in items if "[nearest colour" in c.isom})
+    if nearest:
+        lines.append(f"{len(nearest)} kinds of symbol recognised by the nearest rule colour, not an exact one "
+                     "(recognition.colour_match_de): check them in symbols.csv.")
     lines.append("Map symbols grouped into tactile classes (the [[symbol]] rules of the config):")
     for cls in sorted(symbols, key=lambda c: (cfg.classes[c].role, c)):
         if cls not in shown:
@@ -176,7 +183,8 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
     if check["ok"]:
         lines.append("All checks passed.")
     lines += summary_lines(check)
-    examples = [(k, check[k]["examples_mm"]) for k in ("thin_parts", "narrow_gaps", "hidden_objects") if check[k]["count"]]
+    examples = [(k, check[k]["examples_mm"]) for k in ("thin_parts", "narrow_gaps", "narrow_passages", "hidden_objects")
+                if check[k]["count"]]
     if examples:
         lines.append("Example places, in mm from the bottom-left corner of the plate (x to the right, y up):")
         for k, pts in examples:

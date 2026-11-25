@@ -158,6 +158,10 @@ Open `symbols.csv`. Each row is one kind of symbol found in the map (colour, lin
 width, dot pattern) and the class it was given. If a row says `unclassified`, or a
 symbol got the wrong class, copy `config\default.toml` to e.g. `config\my_map.toml`,
 fix the `[[symbol]]` rules there, and build again with `-c config\my_map.toml`.
+Rows marked `[nearest colour ...]` were recognised by a colour close to a rule's colour
+(another export of a map): check them too. If the map is printed larger or smaller than
+the one the rules were made on, the build measures it and says so (`[recognition]` in
+[docs/SETTINGS.md](docs/SETTINGS.md)). Read every line that starts with `Warning:`.
 
 **4. Tune** in `tuner.html`: per layer, whether it is shown, its height, and its texture
 or symbol shape; textures and standard symbols on or off for the whole model. It warns

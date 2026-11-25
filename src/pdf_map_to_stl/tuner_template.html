@@ -667,5 +667,11 @@ apply(window.tunerState());
 resize();
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
 </script>
+<script>
+// Without internet, three.js cannot load and the 3D view script above never runs: say so.
+window.addEventListener("load", () => setTimeout(() => {
+  if (!window.view3d) document.getElementById("noView").hidden = false;
+}, 3000));
+</script>
 </body>
 </html>

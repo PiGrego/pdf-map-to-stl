@@ -235,6 +235,35 @@ Run in this order; each can be switched off. The targets come from `[tactile]`.
 Starting values from common tactile-graphics practice: confirm them with the people who
 read the maps, using test tiles.
 
+The check also reports **narrow passages**: lower ground narrower than `min_gap_mm`
+between raised parts of different classes (a wall next to a strip of grass), at least
+`min_height_step_mm` below them. A finger cannot follow such a passage. Same-class gaps
+are counted as narrow gaps, not here.
+
+### `[recognition]`: other exports of a map
+
+The `[[symbol]]` rules match the exact colours and sizes of the map they were made on.
+The same map exported by another program, or printed at another scale, has slightly other
+colours and proportionally thicker or thinner lines. These settings let the rules still
+work. Every symbol they affect is marked in `symbols.csv` and `description.txt`, and the
+build prints a warning, so check those rows.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `size_scale` | `"auto"` | sizes in the rules (line widths, extents, dot screens) are multiplied by this. `"auto"` measures it on the dot screens of the map (402...): their dots and spacing must both differ by the same factor; within 10 % of 1 it stays 1 |
+| `colour_match_de` | `10.0` | a colour that no rule matches takes the nearest rule colour, if within this perceptual distance (CIE delta E; 2 is just visible). `0` = off |
+| `colour_margin_de` | `3.0` | ...but only if every other rule colour is at least this much farther; otherwise the symbol stays unrecognised (two rule greys can be close) |
+
+### `[validate]`: warnings from the comparison with the PDF
+
+After a build, the class map is compared with the PDF as rendered (`validation_errors.png`).
+A low result means something is wrong with the input, not with the map.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `min_agreement` | `0.99` | warn when the model agrees with the PDF on less of the checked area |
+| `min_checked_share` | `0.3` | warn when less of the window could be checked (colours the rules do not know, a scan) |
+
 ### `[output]`: size and layout
 
 | Setting | Default | What it does |
@@ -252,6 +281,12 @@ read the maps, using test tiles.
 
 Fixed layout, not settings: 5 mm margins, north symbols 7 × 20 mm, legend samples
 16 × 10 mm, legend frames 0.8 mm wide and 0.6 mm high.
+
+Fixed, not settings, because they are far below what a printer or a finger resolves:
+before an STL is written, edges shorter than 0.0001 mm are collapsed, and where two
+volumes touch along an edge (two areas meeting at one corner) they are moved up to
+0.002 mm apart, so the file is closed (watertight) for every program that reads it.
+`report.json` gives `open_edges` (0 = closed) and `separated_vertices` for each STL.
 
 ### `[braille]`: Braille size
 

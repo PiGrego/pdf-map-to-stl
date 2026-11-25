@@ -26,7 +26,7 @@ from pathlib import Path
 from manifold3d import Manifold, OpType
 from shapely.ops import unary_union
 
-from .model3d import TactileModel, _cross_section, recess_depth, write_stl
+from .model3d import TactileModel, _cross_section, recess_depth, recess_floors, write_stl
 
 
 @dataclass
@@ -81,9 +81,12 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
 
     ground = _union(terrain_cols)
     placed: list[Manifold] = []
+    floors = recess_floors(t)
     objects = sorted((lyr for lyr in t.layers if lyr.role in ("object", "pin")), key=lambda lyr: -lyr.height_mm)
     for layer in objects:
-        solid = _column(layer.geom, base_z, base_z + layer.height_mm)
+        # Over a recess (water) an object stands on its floor, as in model.stl: no tunnel.
+        solid = _union([_column(layer.geom, base_z, base_z + layer.height_mm)]
+                       + [_column(layer.geom.intersection(g), floor, base_z) for g, floor in floors]) or Manifold()
         if ground is not None:
             solid = solid - ground
         for other in placed:

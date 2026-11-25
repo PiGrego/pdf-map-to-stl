@@ -50,8 +50,12 @@ def test_each_area_owns_its_top_skin():
     lo, hi = parts["paved"].solid.bounding_box()[2], parts["paved"].solid.bounding_box()[5]
     assert (lo, hi) == pytest.approx((1.4, 2.0))  # flat area: a 0.6 mm skin up to the plate top
     assert parts["water"].z_top_mm == pytest.approx(1.2)  # floor of a 0.8 mm recess
-    # the barrier part only rises above the ground it stands on
-    assert parts["barrier"].solid.bounding_box()[2] == pytest.approx(2.0)
+    # the barrier part only rises above the ground it stands on: from the plate top on land,
+    # and from the recess floor where it crosses the water (x 40 to 60), so no tunnel under it
+    barrier = parts["barrier"].solid
+    assert barrier.bounding_box()[2] == pytest.approx(1.2)
+    assert barrier.slice(1.5).bounds() == pytest.approx((40.0, 18.0, 50.0, 20.0))
+    assert barrier.slice(2.5).bounds() == pytest.approx((10.0, 18.0, 50.0, 20.0))
 
 
 @pytest.mark.parametrize("shape", ["dot", "ring", "cross"])

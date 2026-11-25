@@ -171,7 +171,8 @@ def _run(a: argparse.Namespace) -> None:
     print(f"Description written to {out / 'description.txt'}: how to hold the model, the legend, "
           "every automatic change, and the checks.")
     print(f"Settings used written to {out / 'settings_used.toml'}.")
-    problems = [f"{c[k]['count']} {k.replace('_', ' ')}" for k in ("thin_parts", "narrow_gaps", "low_steps", "hidden_objects")
+    problems = [f"{c[k]['count']} {k.replace('_', ' ')}" for k in ("thin_parts", "narrow_gaps", "narrow_passages", "low_steps",
+                                                                            "hidden_objects")
                 if c[k]["count"]]
     if problems:
         print(f"Tactile check: {', '.join(problems)}. Details in description.txt and tactile_check.png.")
@@ -184,6 +185,8 @@ def _run(a: argparse.Namespace) -> None:
     if r["unclassified"]:
         print(f"Warning: {len(r['unclassified'])} kinds of map symbol were not recognised. "
               f"Add rules for the rows marked unclassified in {out / 'symbols.csv'}.")
+    for w in r.get("warnings", []):
+        print(f"Warning: {w}")
     print(f"Done in {r['seconds']} seconds.")
 
 
