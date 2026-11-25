@@ -84,6 +84,9 @@ def validate(m: MapModel, cfg: Config, px_per_pt: float = 10.0) -> Validation:
     pure = np.zeros((size[1], size[0]), bool)
     dot_classes = {c.cls for c in m.items if c.prim.kind == "dots"}
     sources = rule_colours(cfg)
+    for c in m.items:  # colours recognised by nearness (recognition.colour_match_de) count too
+        if c.role == "terrain":
+            sources.setdefault(c.cls, set()).add(c.prim.rgb)
     for k, cls in enumerate(names):
         accepted = sorted(sources.get(cls, set()) | ({WHITE} if cls == m.background_class else set()))
         if cls in dot_classes:
@@ -105,6 +108,8 @@ def validate(m: MapModel, cfg: Config, px_per_pt: float = 10.0) -> Validation:
         "px_per_pt": px_per_pt,
         "image_px": list(size),
         "evaluated_share": round(float(evaluated.sum()) / total, 4),
+        # of the window itself (a polygon window fills only part of its bounding box)
+        "checked_share_of_window": round(float(evaluated.sum()) / max(1, int((ours >= 0).sum())), 4),
         "excluded_under_objects_share": round(float(covered.sum()) / total, 4),
         "excluded_not_pure_colour_share": round(float((~pure & ~covered).sum()) / total, 4),
         "accuracy": round(float(correct.sum()) / max(1, int(evaluated.sum())), 5),

@@ -21,7 +21,7 @@ from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
-from .config import Config
+from .config import Config, estimate_size_scale
 from .scene import Primitive, Scene
 
 
@@ -49,6 +49,8 @@ def _luminance(rgb: tuple[int, int, int]) -> float:
 
 
 def classify(scene: Scene, cfg: Config) -> list[Classified]:
+    # Symbol sizes of this PDF relative to the map the rules were made on (recognition.size_scale).
+    cfg.size_scale_used, cfg.size_scale_note = estimate_size_scale(cfg, scene.primitives)
     out = []
     for p in scene.primitives:
         source, isom = cfg.classify(p)

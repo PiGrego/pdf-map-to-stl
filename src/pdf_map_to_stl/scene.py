@@ -144,6 +144,11 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
         area = tuple(window.bounds)
         origin = (float(page.rect.x0), float(page.rect.y0))
         drawings = page.get_drawings(extended=True)
+        if page.rotation:
+            # PyMuPDF gives drawings in the unrotated page; the window is picked on the page
+            # as it is shown (pick.html), and the PDF check renders it as shown too.
+            drawings = _rotate_drawings(drawings, page.rotation_matrix)
+        images = len(page.get_images())
 
     paints, clips = _attach_clip_stacks(drawings)
     clip_region = _ClipRegions(clips, window, step)
@@ -165,6 +170,11 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
         if not region.is_empty:
             prims.extend(_paint_primitives(paint.d, region, paint.blend, step))
     prims.sort(key=lambda p: p.seqno)
+    if not prims:
+        scan = (f" The page holds {images} image(s) and no vector drawings there: it may be a scan."
+                if images and not paints else "")
+        raise ValueError("nothing is drawn in the window (no vector paths). The tool needs a vector PDF exported "
+                         "from a map program such as OCAD; a scanned map or an image cannot be converted." + scan)
 
     stats = {
         "drawings": len(drawings),
@@ -180,6 +190,28 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
 
 
 # ----------------------------------------------------------------------------- steps
+
+
+def _rotate_drawings(drawings: list[dict], m: pymupdf.Matrix) -> list[dict]:
+    """The drawings with every coordinate mapped by ``m`` (the page's rotation matrix).
+    Rectangles become quads, which keep the corner order (and so the winding)."""
+    out = []
+    for d in drawings:
+        d = dict(d)
+        if d.get("items"):
+            items = []
+            for it in d["items"]:
+                if it[0] == "re":
+                    items.append(("qu", pymupdf.Quad(it[1]) * m))
+                elif it[0] == "qu":
+                    items.append(("qu", it[1] * m))
+                else:
+                    items.append((it[0], *(pymupdf.Point(p) * m for p in it[1:])))
+            d["items"] = items
+        if d.get("rect") is not None:
+            d["rect"] = pymupdf.Rect(d["rect"]) * m
+        out.append(d)
+    return out
 
 
 @dataclass

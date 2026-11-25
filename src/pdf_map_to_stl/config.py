@@ -19,14 +19,16 @@ pass it back with ``--settings`` to build the same model again.
 
 from __future__ import annotations
 
+import statistics
 import tomllib
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
 from .braille import BrailleSpec
 from .scene import Primitive
 
 DOT_TOLERANCE = 0.15
+SCALE_KEEP = 0.1  # an estimated size scale within 10 % of 1 is noise: the rules' own tolerances cover it
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 DEFAULT_CONFIG = CONFIG_DIR / "default.toml"
 PROFILE_DIR = CONFIG_DIR / "profiles"
@@ -52,23 +54,75 @@ class SymbolRule:
     dot_mm: float | None = None
     pitch_mm: float | None = None
 
-    def matches(self, p: Primitive) -> bool:
+    def colour_matches(self, rgb: tuple[int, int, int]) -> bool:
+        return max(abs(a - b) for a, b in zip(self.rgb, rgb)) <= self.rgb_tol
+
+    def matches(self, p: Primitive, scale: float = 1.0) -> bool:
+        """``scale`` multiplies every size in the rule (the map printed larger or smaller)."""
         if self.kind != "any" and self.kind != p.kind:
             return False
-        if max(abs(a - b) for a, b in zip(self.rgb, p.rgb)) > self.rgb_tol:
+        if not self.colour_matches(p.rgb):
             return False
-        if self.min_width_mm is not None and p.width_mm < self.min_width_mm:
+        if self.min_width_mm is not None and p.width_mm < self.min_width_mm * scale:
             return False
-        if self.max_width_mm is not None and p.width_mm > self.max_width_mm:
+        if self.max_width_mm is not None and p.width_mm > self.max_width_mm * scale:
             return False
-        if self.min_extent_mm is not None and p.extent_mm < self.min_extent_mm:
+        if self.min_extent_mm is not None and p.extent_mm < self.min_extent_mm * scale:
             return False
-        if self.max_extent_mm is not None and p.extent_mm > self.max_extent_mm:
+        if self.max_extent_mm is not None and p.extent_mm > self.max_extent_mm * scale:
             return False
         for want, got in ((self.dot_mm, p.dot_mm), (self.pitch_mm, p.pitch_mm)):
-            if want is not None and abs(got - want) > DOT_TOLERANCE * want:
+            if want is not None and abs(got - want * scale) > DOT_TOLERANCE * want * scale:
                 return False
         return True
+
+
+def lab(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
+    """CIE L*a*b* (D65) of an sRGB colour, for perceptual colour distances."""
+    c = [v / 255 for v in rgb]
+    c = [((v + 0.055) / 1.055) ** 2.4 if v > 0.04045 else v / 12.92 for v in c]
+    x = (0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047
+    y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    z = (0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]) / 1.08883
+    f = [t ** (1 / 3) if t > 216 / 24389 else (24389 / 27 * t + 16) / 116 for t in (x, y, z)]
+    return 116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])
+
+
+def colour_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    """Perceptual distance (CIE76 delta E): about 2 is just noticeable."""
+    return sum((p - q) ** 2 for p, q in zip(lab(a), lab(b))) ** 0.5
+
+
+def hex_rgb(rgb: tuple[int, int, int]) -> str:
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def estimate_size_scale(cfg: Config, prims: list[Primitive]) -> tuple[float, str]:
+    """How much larger the symbols are drawn in this PDF than in the map the rules were
+    made on: the same map printed at another scale has proportionally thicker or thinner
+    lines and dots. Measured on the dot screens (402 open land with scattered trees...):
+    their dot size and spacing must both differ by the same factor."""
+    s = cfg.recognition.size_scale
+    if s != "auto":
+        return float(s), "set"
+    ratios = []
+    for p in prims:
+        if p.kind != "dots":
+            continue
+        near = cfg.nearest_rule_colour(p.rgb)
+        rgb = near[0] if near else p.rgb
+        for r in cfg.rules:
+            if r.kind != "dots" or not r.dot_mm or not r.pitch_mm or not r.colour_matches(rgb):
+                continue
+            a, b = p.dot_mm / r.dot_mm, p.pitch_mm / r.pitch_mm
+            if 0.5 <= a <= 2.0 and abs(a / b - 1) <= 0.05:
+                ratios.append((a + b) / 2)
+    if not ratios:
+        return 1.0, ""
+    k = statistics.median(ratios)
+    if abs(k - 1) < SCALE_KEEP:
+        return 1.0, ""
+    return round(k, 3), f"estimated from {len(ratios)} dot screen(s)"
 
 
 @dataclass(frozen=True)
@@ -174,6 +228,23 @@ class SizeRules:
 
 
 @dataclass(frozen=True)
+class Recognition:
+    """How symbol recognition copes with other exports of a map (Config.classify)."""
+
+    size_scale: float | str = "auto"  # sizes in the rules times this; "auto" = from the dot screens found
+    colour_match_de: float = 10.0  # an unknown colour takes the nearest rule colour within this distance; 0 = off
+    colour_margin_de: float = 3.0  # ...only if every other rule colour is at least this much farther
+
+
+@dataclass(frozen=True)
+class CheckRules:
+    """When the comparison with the PDF (validate.py) gives a warning."""
+
+    min_agreement: float = 0.99  # warn when the model agrees with the PDF on less of the checked area
+    min_checked_share: float = 0.3  # warn when less of the window could be checked (unknown colours, a scan)
+
+
+@dataclass(frozen=True)
 class PositionRules:
     """Position points (geo.py): pins on the map and their coordinates in Braille."""
 
@@ -210,6 +281,10 @@ class Config:
     generalize: Generalize = field(default_factory=Generalize)
     size: SizeRules = field(default_factory=SizeRules)
     position: PositionRules = field(default_factory=PositionRules)
+    validate: CheckRules = field(default_factory=CheckRules)
+    recognition: Recognition = field(default_factory=Recognition)
+    size_scale_used: float = 1.0  # set per map by estimate_size_scale (compose.classify)
+    size_scale_note: str = ""
     textures: dict[str, Texture] = field(default_factory=dict)  # the texture library
     orientation_corner_mm: float = 0.0
     title: str = ""
@@ -223,11 +298,34 @@ class Config:
     sources: list[str] = field(default_factory=list)  # config and settings files, in order
 
     def classify(self, p: Primitive) -> tuple[str, str]:
-        """(class, isom code) the symbol rules give a primitive; ``unclassified`` if none."""
+        """(class, isom code) the symbol rules give a primitive; ``unclassified`` if none.
+        Sizes in the rules are scaled by ``size_scale_used``. A colour that no rule knows
+        is tried again as the nearest rule colour, when that one is unambiguous; the isom
+        text then says so (symbols.csv, description.txt)."""
         for r in self.rules:
-            if r.matches(p):
+            if r.matches(p, self.size_scale_used):
                 return r.cls, r.isom
+        near = self.nearest_rule_colour(p.rgb)
+        if near is not None:
+            q = replace(p, rgb=near[0])
+            for r in self.rules:
+                if r.matches(q, self.size_scale_used):
+                    return r.cls, f"{r.isom} [nearest colour {hex_rgb(near[0])}, distance {near[1]:.0f}]"
         return "unclassified", "?"
+
+    def nearest_rule_colour(self, rgb: tuple[int, int, int]) -> tuple[tuple[int, int, int], float] | None:
+        """The rule colour nearest to ``rgb`` and its distance, if within
+        ``recognition.colour_match_de`` and clearly nearer than any other rule colour."""
+        rec = self.recognition
+        if rec.colour_match_de <= 0 or not self.rules:
+            return None
+        if any(r.colour_matches(rgb) for r in self.rules):
+            return None  # a known colour: the rules decided already
+        dist = sorted((colour_distance(rgb, c), c) for c in {r.rgb for r in self.rules})
+        best, colour = dist[0]
+        if best > rec.colour_match_de or (len(dist) > 1 and dist[1][0] - best < rec.colour_margin_de):
+            return None
+        return colour, best
 
     def shown_as(self, cls: str) -> str | None:
         """The class a source class is shown as on the model, or None if it is not shown.
@@ -355,8 +453,8 @@ def _section(kind, d: dict, name: str):
     return kind(**d)
 
 
-TOP_SECTIONS = ("output", "size", "position", "features", "smoothing", "generalize", "tactile", "braille", "texture", "class",
-                "symbol")
+TOP_SECTIONS = ("output", "size", "position", "features", "smoothing", "generalize", "tactile", "validate",
+                "recognition", "braille", "texture", "class", "symbol")
 
 
 def from_dict(data: dict, sources: list[str] | None = None) -> Config:
@@ -405,6 +503,8 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         generalize=_section(Generalize, data.get("generalize", {}), "generalize"),
         size=_section(SizeRules, data.get("size", {}), "size"),
         position=_section(PositionRules, data.get("position", {}), "position"),
+        validate=_section(CheckRules, data.get("validate", {}), "validate"),
+        recognition=_recognition(data.get("recognition", {})),
         textures=library,
         orientation_corner_mm=float(out.orientation_corner_mm),
         title=str(out.title),
@@ -417,6 +517,14 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         legend_max_height_mm=float(out.legend_max_height_mm),
         sources=list(sources or []),
     )
+
+
+def _recognition(d: dict) -> Recognition:
+    rec = _section(Recognition, d, "recognition")
+    s = rec.size_scale
+    if s != "auto" and (isinstance(s, bool) or not isinstance(s, (int, float)) or s <= 0):
+        raise ValueError(f"recognition.size_scale is a positive number or \"auto\", not {s!r}")
+    return rec
 
 
 def _texture(t: dict, where: str, name: str = "") -> Texture:
@@ -510,6 +618,8 @@ def settings_dict(cfg: Config) -> dict:
         "smoothing": asdict(cfg.smoothing),
         "generalize": asdict(cfg.generalize),
         "tactile": asdict(cfg.tactile),
+        "validate": asdict(cfg.validate),
+        "recognition": asdict(cfg.recognition),
         "braille": asdict(cfg.braille),
         "texture": {name: _texture_dict(t) for name, t in cfg.textures.items()},
         "class": classes,

@@ -103,11 +103,12 @@ def _set_size(cfg: Config, o: BuildOptions, scene_width_pt: float, sg: SizeSugge
     if o.scale:
         if not cfg.map_scale:
             raise ValueError("--scale needs the scale of the printed map: add --map-scale (e.g. 5000)")
-        cfg.width_mm = scene_width_pt * PT_TO_MM * cfg.map_scale / o.scale
+        # Rounded as settings_used.toml writes it, so a rebuild from that file is identical.
+        cfg.width_mm = round(scene_width_pt * PT_TO_MM * cfg.map_scale / o.scale, 3)
         return "--scale"
     if cfg.width_mm:
         return "output.width_mm"
-    cfg.width_mm = sg.width_mm
+    cfg.width_mm = round(sg.width_mm, 3)
     return "suggested"
 
 
@@ -153,6 +154,34 @@ def rebuild_command(o: BuildOptions) -> str:
         cmd += ["--geo", f"{p.x_mm:g},{p.y_mm:g},{p.lat:.7f},{p.lon:.7f}"]
     cmd += ["--settings", _arg(o.out / "settings_used.toml"), "--settings", "settings.toml", "-o", _arg(o.out)]
     return " ".join(cmd)
+
+
+def input_warnings(validation: dict, cfg: Config, stls: list[dict], inventory: list[dict] = ()) -> list[str]:
+    """Signs that the input, not the map, is the problem: a model that disagrees with the
+    PDF, a window that could hardly be checked, an STL that is not closed, symbols known
+    only by their nearest colour, symbol sizes that differ from the rules."""
+    out = []
+    nearest = [r for r in inventory if "[nearest colour" in r["isom"]]
+    if nearest:
+        out.append(f"{len(nearest)} kinds of map symbol were recognised by the nearest rule colour, not an exact one "
+                   "(recognition.colour_match_de). Check the rows marked [nearest colour] in symbols.csv.")
+    if cfg.size_scale_used != 1.0:
+        out.append(f"the symbols in this PDF are {cfg.size_scale_used:g} times the size the rules expect "
+                   f"({cfg.size_scale_note}); the rules were scaled to match (recognition.size_scale).")
+    v = validation.get("metrics") if validation else None
+    if v and v["accuracy"] < cfg.validate.min_agreement:
+        out.append(f"the model agrees with the PDF on only {v['accuracy']:.1%} of the checked area "
+                   f"(validate.min_agreement is {cfg.validate.min_agreement:.0%}). Look at validation_errors.png; "
+                   "an unusual PDF (for example a rotated or re-exported page) can cause this.")
+    share = v.get("checked_share_of_window") if v else None
+    if share is not None and share < cfg.validate.min_checked_share:
+        out.append(f"only {share:.0%} of the window could be compared with the PDF "
+                   f"(validate.min_checked_share is {cfg.validate.min_checked_share:.0%}): its colours are not in the "
+                   "symbol rules, or it is not a vector map. Check symbols.csv.")
+    for s in stls:
+        if s.get("open_edges"):
+            out.append(f"an STL file has {s['open_edges']} open edges; the slicer may need to repair it.")
+    return out
 
 
 def build(o: BuildOptions) -> dict:
@@ -239,6 +268,8 @@ def build(o: BuildOptions) -> dict:
         "settings": cfg.sources,
         "validation": validation,
         "unclassified": [r for r in inventory if r["class"] == "unclassified"],
+        "warnings": input_warnings(validation, cfg, [stl, legend_stl], inventory),
+        "recognition": {"size_scale": cfg.size_scale_used, "note": cfg.size_scale_note},
         "seconds": round(time.perf_counter() - t0, 2),
     }
     write_json(report, o.out / "report.json")

@@ -6,6 +6,8 @@ Checks, all on the model at print size:
 * **thin parts**: raised (or recessed) parts narrower than ``min_feature_mm``;
 * **narrow gaps**: two raised parts of the same class closer than ``min_gap_mm``
   (they feel like one);
+* **narrow passages**: lower ground narrower than ``min_gap_mm`` between raised parts of
+  different classes (a wall and a strip of grass): a finger cannot follow it;
 * **low steps**: two touching terrain classes whose heights differ by less than
   ``min_height_step_mm`` and that have the same texture (they feel the same);
 * **hidden objects**: objects (walls, trees…) that rise less than
@@ -95,6 +97,8 @@ def check_model(t: TactileModel, cfg: Config) -> CheckResult:
         if under:
             hidden[obj.cls] = _spots(obj.geom.intersection(unary_union(under)), 0.5)
 
+    passages = _cross_class_passages(layers, terrain, narrow, gap, step)
+
     def block(d: dict[str, list[Polygon]]) -> dict:
         allspots = [p for ps in d.values() for p in ps]
         return {
@@ -113,6 +117,7 @@ def check_model(t: TactileModel, cfg: Config) -> CheckResult:
         },
         "thin_parts": block(thin),
         "narrow_gaps": block(narrow),
+        "narrow_passages": block({"between classes": passages} if passages else {}),
         "low_steps": {"count": len(low_steps), "pairs": low_steps},
         "hidden_objects": block(hidden),
         "small_areas": block(small),
@@ -120,15 +125,35 @@ def check_model(t: TactileModel, cfg: Config) -> CheckResult:
         "orientation_corner_mm": round(t.corner_mm, 1),
         "braille_title": t.title,
     }
-    summary["ok"] = all(summary[k]["count"] == 0 for k in ("thin_parts", "narrow_gaps", "low_steps", "hidden_objects"))
+    summary["ok"] = all(summary[k]["count"] == 0
+                        for k in ("thin_parts", "narrow_gaps", "narrow_passages", "low_steps", "hidden_objects"))
     problems = {
         "thin_parts": unary_union([p for ps in thin.values() for p in ps]) if thin else Polygon(),
-        "narrow_gaps": unary_union([p for ps in narrow.values() for p in ps]) if narrow else Polygon(),
+        "narrow_gaps": unary_union([p for ps in narrow.values() for p in ps] + passages),
         "low_steps": unary_union([ln.buffer(0.5) for ln in step_lines]) if step_lines else Polygon(),
         "hidden_objects": unary_union([p for ps in hidden.values() for p in ps]) if hidden else Polygon(),
         "small_areas": unary_union([p for ps in small.values() for p in ps]) if small else Polygon(),
     }
     return CheckResult(summary, problems)
+
+
+def _cross_class_passages(layers, terrain, narrow: dict, gap: float, step: float) -> list[Polygon]:
+    """Lower ground narrower than ``gap`` between raised parts of different classes, at
+    least ``step`` below them; places already reported as same-class gaps are left out."""
+    raised = [lyr for lyr in layers if lyr.height_mm > 0]
+    same = unary_union([p for ps in narrow.values() for p in ps]).buffer(0.1) if narrow else Polygon()
+    found: list[Polygon] = []
+    for z in sorted({lyr.height_mm for lyr in raised}):
+        high = unary_union([lyr.geom for lyr in raised if lyr.height_mm >= z - 1e-9])
+        low = unary_union([lyr.geom for lyr in terrain if lyr.height_mm <= z - step + 1e-9])
+        if high.is_empty or low.is_empty:
+            continue
+        closed = high.buffer(0.45 * gap, 4).buffer(-0.45 * gap, 4)
+        cand = closed.difference(high.buffer(0.01)).intersection(low).difference(same)
+        if found:
+            cand = cand.difference(unary_union(found).buffer(0.1))
+        found += _spots(cand, 0.15 * gap * gap)
+    return found
 
 
 def summary_lines(s: dict) -> list[str]:
@@ -137,6 +162,8 @@ def summary_lines(s: dict) -> list[str]:
     out = [
         f"Thin parts (narrower than {r['min_feature_mm']} mm): {s['thin_parts']['count']}",
         f"Narrow gaps (closer than {r['min_gap_mm']} mm): {s['narrow_gaps']['count']}",
+        (f"Narrow passages between different raised features (narrower than {r['min_gap_mm']} mm): "
+         f"{s['narrow_passages']['count']}"),
         (f"Neighbouring areas that feel the same (height step under {r['min_height_step_mm']} mm, same texture): "
          f"{s['low_steps']['count']}"),
         (f"Objects that barely rise above the ground (under {r['min_height_step_mm']} mm): "

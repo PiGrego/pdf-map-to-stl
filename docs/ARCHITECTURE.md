@@ -164,6 +164,23 @@ separate Braille legend, and optionally where the map is on Earth (position pins
 their coordinates in Braille, for navigation apps); Braille is placed at standard
 physical size, never scaled.
 
+**STL files are closed for every reader.** `manifold3d` keeps two volumes that touch
+along an edge (two areas meeting at one corner) apart with duplicate vertices at the same
+place. An STL has no topology: any reader merges vertices by position, and that edge then
+belongs to 4 faces. Float32 coordinates also merge vertices closer than about 0.00003 mm.
+`model3d.printable_mesh` (called by `write_stl`) collapses tiny edges, moves those
+duplicates up to 0.002 mm apart into their own volume, and rebuilds the mesh from the
+float32 coordinates; `report.json` counts the open edges of each file as written.
+Raised layers that cross a recess (a wall along a lake) stand on its floor, like the
+position pins, so there is no tunnel under them (`_recess_fills`; `parts.py` does the same).
+
+**Bad input is reported, not converted silently.** A page with `/Rotate` is read as it is
+shown (`scene._rotate_drawings`), so the window picked in `pick.html` is the one
+converted. A window with no vector drawings (a scan) is an error. After the comparison
+with the PDF, low agreement or a small checked area is a warning (`[validate]`), and so
+is every symbol recognised only by its nearest colour or a measured size scale
+(`[recognition]`, `config.estimate_size_scale`, `Config.nearest_rule_colour`).
+
 **Heights are confirmed by touch.** `tuner.html` lets the operator try heights, switches,
 textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 `--region` prints a small test tile to have them read before printing the whole map.
@@ -203,4 +220,8 @@ textures and shapes on a 3D view (or in a plain form) and saves `settings.toml`;
 legend) and end-to-end checks on `samples/orienteering-map-sample-Navile.pdf`, a real
 sprint map, on a 50 x 37 mm window of it (`tests/sample_map.py`), mostly at a fixed
 120 mm print width so they stay fast; `tests/test_size.py` checks the suggested size.
+`tests/test_robustness.py` covers inputs and outputs that once failed silently: STL files
+closed for any reader, walls over water, rotated pages, scans, other export scales and
+colours, coordinates with typos, passages between different classes, and identical
+rebuilds from `settings_used.toml`.
 `ruff check src tests` must pass.
