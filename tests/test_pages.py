@@ -23,6 +23,11 @@ def test_picker_page_has_page_image_and_size(tmp_path):
     data = _embedded_json(html, "PAGE")
     assert data["image"].startswith("data:image/png;base64,")
     assert data["width_mm"] > 0 and data["height_mm"] > 0
+    # Fixed size: the map's scale as printed on the page, and the usual margins of a plate.
+    assert data["map_scale"] == 5000 and all(m > 0 for m in data["margins_mm"])
+    assert 'value="fixed"' in html and 'id="slopes"' in html  # slopes stay a choice, off by default
+    assert '<input type="checkbox" id="slopes" checked' not in html
+    assert '<input type="checkbox" id="scalebar" checked' in html  # the scale bar is on unless unticked
 
 
 def test_tuner_page_lists_every_layer(tmp_path):

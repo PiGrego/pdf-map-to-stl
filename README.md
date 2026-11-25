@@ -38,6 +38,9 @@ Every model also has:
 - **North symbols** at the top-right and bottom-left corners (ring end points north),
   and the **Braille title and scale** at the top left, as in the guidebook. Braille is
   standard size (dots 1.5 mm, 2.5 mm apart, cells 6 mm apart), never scaled with the map.
+- A **scale bar** under the title, to feel distances: a raised bar as long as a round
+  distance on the ground (at 1:1000, 50 m is 50 mm), a tick at each end and every 10 m,
+  and the distance in Braille beside it (`[scale_bar]` in docs/SETTINGS.md).
 - **A tactile legend** (`legend.stl`) with one sample of every symbol used, each with
   its name in Braille. Flat symbols get a raised frame so they can be found.
 - **Tactile generalisation:** drawing artefacts removed, passages narrower than 3 mm
@@ -83,10 +86,11 @@ points it checks that their distance agrees with the map (a typing mistake shows
 
 ## Slopes (experimental)
 
-`--set relief.enabled=true` turns the contour lines into terraces: every band between
-two contours is raised 0.4 mm above the one below, so a hill can be felt. The lowest
-ground is where the water is; check `relief_levels.png` (darker = higher). Details in
-[docs/SETTINGS.md](docs/SETTINGS.md) (`[relief]`).
+Off unless you ask for it: tick **Show slopes** in `pick.html`, or add
+`--set relief.enabled=true` to the command. The contour lines then become terraces:
+every band between two contours is raised 0.4 mm above the one below, so a hill can be
+felt. The lowest ground is where the water is; check `relief_levels.png` (darker =
+higher). Details in [docs/SETTINGS.md](docs/SETTINGS.md) (`[relief]`).
 
 ## Size and scale
 
@@ -127,9 +131,18 @@ pdf-map-to-stl pick "maps\my map.pdf"
 ```
 
 Open the `pick.html` it writes and draw the part of the map you want: drag a
-**rectangle**, or click the corners of a **polygon** (or type either in millimetres).
-Copy the command it shows. Pick only map: a whole page also holds the title, the
-control descriptions and logos, which would become terrain.
+**rectangle**, click the corners of a **polygon**, or choose **Fixed size** (or type
+the window in millimetres). Copy the command it shows. Pick only map: a whole page also
+holds the title, the control descriptions and logos, which would become terrain.
+
+**Fixed size** is for a plate of a given size, for example to fill a printer bed. Type
+the plate size (170 × 170 mm suits a 180 × 180 mm bed such as the Bambu Lab A1 mini),
+and the scale of the tactile map (1:1000 by default), then click on the map where the
+middle of the plate should go, or drag the square. The scale of the printed map, at the
+top of the panel, is filled in when the page states it as text; otherwise type it. The command gets `--plate` and `--scale`: the
+model comes out exactly that size, with the map filling it and the Braille title and
+north symbols in its margins. If the title or the coordinates of position points need
+more room, the map gets a little less height, and the plate keeps its size.
 
 A polygon window gives a map with the shape of the polygon: the plate stays a
 rectangle, a low raised line runs along the polygon's edge so it can be felt, and
@@ -142,7 +155,7 @@ pdf-map-to-stl build "maps\my map.pdf" --crop 14.6,14.6,27.8,24.1
 ```
 
 It builds at the suggested size (see **Size and scale** above), or at `--scale 1000` or
-`--width 200` if you give one. Results go to
+`--width 200` if you give one, or on a plate of fixed size (`--plate 170,170 --scale 1000`). Results go to
 `outputs\<map name>\` (change with `-o`):
 
 | File | What it is |
@@ -215,7 +228,7 @@ each entry), in `outputs\<map name>\legend\`.
 pdf-map-to-stl pick   MAP.pdf [--page N] [-o DIR]
 pdf-map-to-stl size   MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--map-scale N] [settings options]
 pdf-map-to-stl build  MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [--width MM]
-                              [--map-scale N] [--scale N] [-c CONFIG.toml]
+                              [--map-scale N] [--scale N] [--plate W,H] [-c CONFIG.toml]
                               [--settings FILE_OR_PROFILE]... [--set SECTION.KEY=VALUE]...
                               [--no-textures] [--region X0,Y0,X1,Y1] [--geo X,Y,LAT,LON]...
                               [--title TEXT] [--no-validate] [-o DIR]
@@ -229,6 +242,8 @@ pdf-map-to-stl legend MAP.pdf [--page N] [--crop X0,Y0,X1,Y1[,...]] [-c CONFIG.t
 - `--map-scale`: the printed map's scale (e.g. `5000`); by default read from the page.
 - `--scale`: build at this tactile scale (e.g. `1000`) instead of the suggested size.
 - `--width`: printed width of the map in mm, instead of the suggested size.
+- `--plate`: a plate of exactly `W,H` mm (one number for a square), with `--scale`: the
+  window is made to fill it, centred where `--crop` is (`pick.html`, Fixed size).
 - `--region`: part of the *map* on the model, in mm from its bottom-left corner (test tiles).
 - `--title`: Braille title (default: the file name; `--title ""` for none).
 - `--settings`: a settings file or a profile (`no_textures`, `as_drawn`, `heights_only`);

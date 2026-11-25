@@ -178,6 +178,13 @@ def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list
         hold.append("The top-right corner of the plate is cut off.")
     if t.title:
         hold.append(f'The Braille title "{t.title}" is at the top left.')
+    if t.scale_bar:
+        b = t.scale_bar
+        ticks = f", with a tick every {b['metres'] / b['divisions']:g} m" if b["divisions"] > 1 else ""
+        hold.append(f"{b['where'][0].upper()}{b['where'][1:]}, a raised scale bar measures {b['label']} on the ground "
+                    f"from one end tick to the other{ticks}; the distance is in Braille at its right.")
+    elif cfg.features.scale_bar and not cfg.map_scale:
+        hold.append("There is no scale bar: the scale of the map is not known (give it with --map-scale).")
     lines.append(" ".join(hold))
     if t.positions:
         lines += ["", "WHERE IT IS"] + position_lines(t, geo_check or [])

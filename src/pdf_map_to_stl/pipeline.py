@@ -16,7 +16,7 @@ calls them in order and writes outputs.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .compose import build_map, classify
@@ -24,18 +24,19 @@ from .config import Config, load_config, settings_dict, to_toml
 from .describe import describe, tactile_scale, write_description
 from .geo import MAX_POINTS, GeoPoint, check_points
 from .legend import DEFAULT_TITLE, build_legend, classes_in_map, classes_in_model, legend_text
-from .model3d import TactileModel, build_layers, build_solid, layer_summary, write_stl
+from .model3d import TactileModel, build_layers, build_solid, layer_summary, margins, write_stl
 from .parts import build_parts, write_parts
 from .preview import check_image, relief_image, terraces_image
 from .relief import find_relief
 from .report import symbol_inventory, write_csv, write_json, write_layers_svg
-from .scene import PT_TO_MM, Window, load_scene, read_map_scale
+from .scene import PT_TO_MM, Window, load_scene, page_size_mm, read_map_scale
 from .size import SizeSuggestion, describe_size, suggest_size
 from .tactile_check import check_model
 from .tuner import write_tuner
 from .validate import class_colours, validate
 
 Rect = tuple[float, float, float, float]
+MIN_PLATE_MAP_MM = 10.0  # a fixed plate (--plate) must leave at least this much height for the map
 
 OUTPUT_FILES = [
     "model.stl: the tactile map to print, as one body.",
@@ -68,6 +69,7 @@ class BuildOptions:
     settings: tuple = ()  # settings files or profile names, applied in order after the config
     overrides: tuple = ()  # "section.key=value" strings, applied last
     geo: tuple[GeoPoint, ...] = ()  # position points: where the map is on Earth (geo.py)
+    plate_mm: tuple[float, float] | None = None  # fixed plate size (--plate): the window is made to fill it
 
 
 def describe_window(crop_mm) -> str:
@@ -96,8 +98,51 @@ def set_map_scale(cfg: Config, map_scale: float | None, pdf: Path, page: int) ->
     return "unknown"
 
 
+def plate_window(o: BuildOptions, cfg: Config) -> Rect:
+    """--plate: the window, in mm on the page, that fills a plate of exactly ``o.plate_mm``
+    at the tactile scale ``o.scale``. It is centred where the picked window (--crop) is,
+    or on the page, and moved inside the page if it would stick out. Its height leaves
+    room for the margins (Braille title, north symbols, coordinates) on the plate."""
+    w, h = o.plate_mm
+    if not o.scale:
+        raise ValueError("--plate needs --scale, the scale of the tactile map (for example --scale 1000)")
+    if o.width_mm:
+        raise ValueError("--plate already sets the width of the map: leave out --width")
+    if not cfg.map_scale:
+        raise ValueError("--plate needs the scale of the printed map: add --map-scale (for example 5000)")
+    if o.crop_mm is not None and len(o.crop_mm) != 4:
+        raise ValueError("--plate needs a rectangle window (--crop with 4 numbers), not a polygon")
+    page_w, page_h = page_size_mm(o.pdf, o.page)
+    if o.crop_mm is None:
+        cx, cy = page_w / 2, page_h / 2
+    else:
+        x0, y0, x1, y1 = o.crop_mm
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    title = resolve_title(o.title, cfg.title, o.pdf)
+    if title:
+        title += f" 1:{o.scale:.0f}"  # as build() writes it
+    mg = margins(cfg, w, title, o.geo, o.region_mm, o.scale / 1000)  # 1:1000 = 1 m on the ground per mm
+    map_h = h - mg.top - mg.bottom
+    if map_h < MIN_PLATE_MAP_MM:
+        raise ValueError(f"a {w:g} by {h:g} mm plate leaves no room for the map: the Braille title, north symbols "
+                         f"and coordinates take {mg.top + mg.bottom:g} mm of its height")
+    enlarge = cfg.map_scale / o.scale  # mm on the plate per mm on the page
+    ww, wh = w / enlarge, map_h / enlarge
+    if ww > page_w + 1e-6 or wh > page_h + 1e-6:
+        raise ValueError(f"at 1:{o.scale:g} a {w:g} by {h:g} mm plate needs {ww:.0f} by {wh:.0f} mm of the map page, "
+                         f"more than the whole page ({page_w:.0f} by {page_h:.0f} mm): use a larger scale number "
+                         "or a smaller plate")
+    x0 = min(max(cx - ww / 2, 0.0), page_w - ww)
+    y0 = min(max(cy - wh / 2, 0.0), page_h - wh)
+    # Rounded as the description and the rebuild command write it, so a rebuild is identical.
+    return (round(x0, 3), round(y0, 3), round(x0 + ww, 3), round(y0 + wh, 3))
+
+
 def _set_size(cfg: Config, o: BuildOptions, scene_width_pt: float, sg: SizeSuggestion) -> str:
     """Set the printed map width; returns where it came from."""
+    if o.plate_mm:
+        cfg.width_mm = float(o.plate_mm[0])
+        return "--plate"
     if o.width_mm:
         cfg.width_mm = o.width_mm
         return "--width"
@@ -192,9 +237,12 @@ def build(o: BuildOptions) -> dict:
     # 1. Configuration: symbol rules, tactile classes and every setting (+ settings files).
     cfg = load_config(o.config, o.heights, o.settings, o.overrides)
 
-    # 2. Scene: every paint operation of the page (or crop) as a clipped polygon.
-    scene = load_scene(o.pdf, o.page, o.crop_mm, cfg.smoothing.curve_step_mm)
+    # 2. Scene: every paint operation of the page (or crop) as a clipped polygon. A fixed
+    #    plate (--plate) first sets the window that fills it.
     map_scale_source = set_map_scale(cfg, o.map_scale, o.pdf, o.page)
+    if o.plate_mm:
+        o = replace(o, crop_mm=plate_window(o, cfg))
+    scene = load_scene(o.pdf, o.page, o.crop_mm, cfg.smoothing.curve_step_mm)
 
     # 3. Classify and compose: which terrain is visible where; which objects sit on top.
     m = build_map(scene, cfg)
@@ -203,6 +251,11 @@ def build(o: BuildOptions) -> dict:
     suggestion = suggest_size(m, cfg)
     size_source = _set_size(cfg, o, scene.width_pt, suggestion)
     size_lines = describe_size(suggestion, cfg, cfg.width_mm, size_source)
+    if o.plate_mm:
+        x0, y0, x1, y1 = o.crop_mm
+        size_lines.append(f"The plate is fixed at {o.plate_mm[0]:g} by {o.plate_mm[1]:g} mm (--plate). At 1:{o.scale:g} "
+                          f"it shows {x1 - x0:.1f} by {y1 - y0:.1f} mm of the map page, centred where the window was "
+                          "picked; the rest of the plate holds the Braille title and the north symbols.")
     write_settings(cfg, o.out / "settings_used.toml", o.pdf.name)
 
     # 5. Tactile model and legend at print scale; one body and one part per layer each.
@@ -260,8 +313,10 @@ def build(o: BuildOptions) -> dict:
             "braille_title": t.title,
         },
         "size": {**suggestion.as_dict(), "used_width_mm": round(cfg.width_mm, 3), "source": size_source,
+                 "plate_mm": list(o.plate_mm) if o.plate_mm else None, "window_mm": list(o.crop_mm or ()),
                  "lines": size_lines},
         "positions": t.positions,
+        "scale_bar": t.scale_bar,
         "relief": None if relief is None else {
             "levels": relief.levels, "lines": relief.lines, "ticks": relief.ticks, "note": relief.note,
             "lift_mm": [round(dz, 3) for _, dz in t.relief]},

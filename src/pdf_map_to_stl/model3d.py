@@ -10,7 +10,9 @@ The model also carries what a blind reader needs to use it without help:
 
 * **north symbols** at the top-right and bottom-left corners (``features.north_symbol``),
   and optionally a cut top-right corner (``output.orientation_corner_mm``);
-* a **Braille title** (and scale) at the top left, at standard Braille size (never scaled).
+* a **Braille title** (and scale) at the top left, at standard Braille size (never scaled);
+* a **scale bar** under the title: as long as a round distance on the ground, with ticks
+  and the distance in Braille (``features.scale_bar``, ``[scale_bar]``).
 
 The solid is the base plate, plus every raised layer extruded on top of it, minus every
 recessed layer cut into it, plus the Braille dots, merged by ``manifold3d`` so the result
@@ -45,6 +47,7 @@ from .scene import PT_TO_MM
 
 MIN_FLOOR_MM = 0.4  # a recess always leaves at least this much plate under it
 EDGE_PAD_MM = 5.0  # margin around Braille text
+BAR_GAP_MM = 3.0  # scale bar: space between the title and the bar, and between the bar and its label
 MIN_PRINT_AREA_MM2 = 0.05  # polygons smaller than this are numerical dust, not features
 # Writing the STL (printable_mesh): far below what a printer or a finger can resolve.
 MERGE_MM = 1e-4  # edges shorter than this are collapsed
@@ -78,6 +81,7 @@ class TactileModel:
     generalized: dict = field(default_factory=dict)  # what generalize.py changed
     positions: list[dict] = field(default_factory=list)  # position points: where they are on the plate
     relief: list[tuple[BaseGeometry, float]] = field(default_factory=list)  # slopes: (area, lift in mm)
+    scale_bar: dict = field(default_factory=dict)  # the scale bar: metres, length_mm, divisions, label
 
     def tactile_layers(self) -> list[Layer]:
         """Terrain and object layers (the map's content, without textures and Braille)."""
@@ -96,6 +100,106 @@ def _to_model(g: BaseGeometry, page_rect, scale: float) -> BaseGeometry:
 def _drop_small(g: BaseGeometry, min_area: float) -> BaseGeometry:
     keep = [p for p in polygons(g) if p.area >= min_area]
     return unary_union(keep) if keep else Polygon()
+
+
+@dataclass(frozen=True)
+class ScaleBar:
+    metres: float  # distance on the ground between the end ticks
+    length_mm: float  # the same on the model
+    divisions: int  # spaces between ticks (1 = ticks at the ends only)
+    label: str  # the distance in words, also in Braille right of the bar
+
+
+def scale_bar(cfg: Config, room_mm: float, metres_per_mm: float | None) -> ScaleBar | None:
+    """The longest round distance (1, 2 or 5 times 1, 10, 100... m) whose bar is at most
+    ``scale_bar.max_length_mm`` long and fits in ``room_mm`` with its Braille label; None
+    if the scale is unknown or not even ``min_length_mm`` fits. A bar of 1 or 5 units has
+    5 divisions (50 m: a tick every 10 m), one of 2 has 4, if the ticks are far enough apart."""
+    sb, spec = cfg.scale_bar, cfg.braille
+    if not metres_per_mm or metres_per_mm <= 0:
+        return None
+    for metres in sorted((d * 10**k for k in range(6) for d in (1, 2, 5)), reverse=True):
+        length = metres / metres_per_mm
+        label = f"{metres / 1000:g} km" if metres >= 1000 else f"{metres:g} m"
+        label_w = len(braille.to_cells(label)) * spec.cell_spacing_mm
+        if length > sb.max_length_mm or sb.width_mm + length + BAR_GAP_MM + label_w > room_mm:
+            continue
+        if length < sb.min_length_mm:
+            return None
+        divisions = 4 if str(metres).startswith("2") else 5
+        if length / divisions < sb.min_tick_spacing_mm:
+            divisions = 1
+        return ScaleBar(metres, length, divisions, label)
+    return None
+
+
+def scale_bar_shapes(bar: ScaleBar, cfg: Config, x: float, y_top: float) -> tuple[BaseGeometry, list[tuple[float, float]]]:
+    """The raised bar with its ticks, and the Braille dots of its label at its right, in a
+    band whose top-left corner is (x, y_top). The distance runs between the centres of
+    the end ticks."""
+    sb, spec = cfg.scale_bar, cfg.braille
+    yc = y_top - max(sb.tick_mm, spec.cell_height_mm) / 2
+    half = sb.width_mm / 2
+    x0 = x + half
+    shapes = [box(x0, yc - half, x0 + bar.length_mm, yc + half)]
+    for k in range(bar.divisions + 1):
+        tx = x0 + bar.length_mm * k / bar.divisions
+        reach = sb.tick_mm / 2 if k in (0, bar.divisions) else sb.tick_mm * 0.3
+        shapes.append(box(tx - half, yc - reach, tx + half, yc + reach))
+    dots = braille.dot_centres(bar.label, spec, x0 + bar.length_mm + half + BAR_GAP_MM, yc + spec.cell_height_mm / 2)
+    return unary_union(shapes), dots
+
+
+@dataclass
+class Margins:
+    """The bands above and below the map, in model mm: the Braille title and a north
+    symbol at the top; a north symbol and the position points' coordinates at the bottom."""
+
+    top: float
+    bottom: float
+    north: bool
+    title_lines: list[str]
+    geo_lines: list[str]
+    geo_x: float  # where the coordinates start, right of the bottom north symbol
+    bar: ScaleBar | None = None  # the scale bar
+    bar_where: str = ""  # "top": under the title; "bottom": beside the bottom-left north symbol
+    bar_x: float = 0.0  # left edge of the bar's band
+    bar_y: float = 0.0  # top edge of the band: down from the plate's top ("top"), up from its bottom ("bottom")
+
+
+def margins(cfg: Config, w: float, title: str | None, geo: tuple[GeoPoint, ...] = (),
+            region: tuple[float, float, float, float] | None = None,
+            metres_per_mm: float | None = None) -> Margins:
+    """Margins of a map ``w`` mm wide with this Braille title and these position points,
+    and a scale bar if ``metres_per_mm`` (on the ground, per mm on the model) is known.
+    Test tiles (``region``) have none."""
+    spec = cfg.braille
+    north = cfg.features.north_symbol and region is None
+    title = "" if region is not None else (title or "")
+    room = w - 2 * EDGE_PAD_MM - (NORTH_W_MM + EDGE_PAD_MM if north else 0)
+    lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
+    title_h = (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if lines else 0.0
+    # Bottom margin: north symbol at the left, then the position points' coordinates.
+    geo_x = EDGE_PAD_MM + (NORTH_W_MM + EDGE_PAD_MM if north else 0.0)
+    geo_cells = _cells_that_fit(w - geo_x - EDGE_PAD_MM, spec)
+    geo_lines = [] if region is not None else [
+        line for i, p in enumerate(geo, 1) for line in braille.wrap(f"{i}: {p.text(cfg.position.decimals)}", geo_cells)
+    ]
+    geo_h = (len(geo_lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if geo_lines else 0.0
+    # The scale bar, where the plate does not have to grow for it: under the title, beside
+    # the top-right north symbol; under a long title, beside the bottom-left north symbol
+    # (if no coordinates are there); else under the title, in a taller top margin.
+    bar = scale_bar(cfg, room, metres_per_mm) if cfg.features.scale_bar and region is None else None
+    band_h = max(cfg.scale_bar.tick_mm, spec.cell_height_mm)
+    under_title = title_h + (BAR_GAP_MM if lines else 0.0) + band_h
+    where = ""
+    if bar:
+        where = "bottom" if north and not geo_lines and under_title > NORTH_H_MM else "top"
+    left_h = under_title if where == "top" else title_h
+    top = 2 * EDGE_PAD_MM + max(left_h, NORTH_H_MM if north else 0.0) if (lines or north or where) else 0.0
+    bottom = 2 * EDGE_PAD_MM + max(NORTH_H_MM if north else 0.0, geo_h) if (north or geo_lines) else 0.0
+    bar_x, bar_y = (EDGE_PAD_MM, under_title - band_h + EDGE_PAD_MM) if where == "top" else (geo_x, bottom - EDGE_PAD_MM)
+    return Margins(top, bottom, north, lines, geo_lines, geo_x, bar, where, bar_x, bar_y)
 
 
 def build_layers(
@@ -135,22 +239,11 @@ def build_layers(
     for layer in layers:
         layer.geom = affinity.translate(layer.geom, -x0, -y0)
 
-    # Margins: top (title + north symbol), bottom (north symbol). Not on test tiles.
+    # Margins: top (title + north symbol), bottom (north symbol, coordinates). Not on test tiles.
     spec = cfg.braille
-    north = cfg.features.north_symbol and region is None
-    title = "" if region is not None else (title or "")
-    room = w - 2 * EDGE_PAD_MM - (NORTH_W_MM + EDGE_PAD_MM if north else 0)
-    lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
-    title_h = (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if lines else 0.0
-    top = 2 * EDGE_PAD_MM + max(title_h, NORTH_H_MM if north else 0.0) if (lines or north) else 0.0
-    # Bottom margin: north symbol at the left, then the position points' coordinates.
-    geo_x = EDGE_PAD_MM + (NORTH_W_MM + EDGE_PAD_MM if north else 0.0)
-    geo_cells = _cells_that_fit(w - geo_x - EDGE_PAD_MM, spec)
-    geo_lines = [] if region is not None else [
-        line for i, p in enumerate(geo, 1) for line in braille.wrap(f"{i}: {p.text(cfg.position.decimals)}", geo_cells)
-    ]
-    geo_h = (len(geo_lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if geo_lines else 0.0
-    bottom = 2 * EDGE_PAD_MM + max(NORTH_H_MM if north else 0.0, geo_h) if (north or geo_lines) else 0.0
+    metres_per_mm = PT_TO_MM * cfg.map_scale / scale / 1000 if cfg.map_scale else None  # ground m per model mm
+    mg = margins(cfg, w, title, geo, region, metres_per_mm)
+    north, lines, geo_lines, geo_x, top, bottom = mg.north, mg.title_lines, mg.geo_lines, mg.geo_x, mg.top, mg.bottom
     for layer in layers:
         layer.geom = affinity.translate(layer.geom, 0, bottom)
     total_h = bottom + h + top
@@ -203,6 +296,16 @@ def build_layers(
             north_symbol(EDGE_PAD_MM + NORTH_W_MM / 2, bottom - EDGE_PAD_MM),
         ])
         layers.append(Layer("north", "north", cfg.north_height_mm, glyphs))
+    bar_info = {}
+    if mg.bar:
+        y_top = total_h - mg.bar_y if mg.bar_where == "top" else mg.bar_y
+        shape, label_dots = scale_bar_shapes(mg.bar, cfg, mg.bar_x, y_top)
+        layers.append(Layer("scale bar", "scale_bar", cfg.scale_bar.height_mm, shape))
+        dots += label_dots
+        where = ("beside the bottom-left north symbol" if mg.bar_where == "bottom"
+                 else "under the title" if lines else "at the top left")
+        bar_info = {"metres": mg.bar.metres, "length_mm": round(mg.bar.length_mm, 2), "divisions": mg.bar.divisions,
+                    "label": mg.bar.label, "where": where}
     if dots:
         r = spec.dot_diameter_mm / 2
         layers.append(Layer("braille", "braille", spec.dot_height_mm, unary_union([Point(p).buffer(r, 8) for p in dots])))
@@ -221,7 +324,7 @@ def build_layers(
 
     return TactileModel(
         w, total_h, cfg.base_mm, scale, layers, plate, (0.0, bottom, w, bottom + h), dots, spec, " / ".join(lines), c,
-        report.as_dict(), positions, terraces,
+        report.as_dict(), positions, terraces, bar_info,
     )
 
 
@@ -456,7 +559,7 @@ def _recess_fills(t: TactileModel) -> list[Manifold]:
     fills = []
     for geom, floor in recess_floors(t):
         for layer in t.layers:
-            if layer.height_mm <= 0 or layer.role not in ("object", "terrain", "north", "edge"):
+            if layer.height_mm <= 0 or layer.role not in ("object", "terrain", "north", "edge", "scale_bar"):
                 continue
             cs = _cross_section(layer.geom.intersection(geom))
             if not cs.is_empty():

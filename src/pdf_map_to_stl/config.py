@@ -175,6 +175,7 @@ class Features:
     textures: bool = True  # raised patterns on areas; false = every area smooth
     standard_symbols: bool = True  # trees, boulders, crosses as standard symbols; false = as drawn
     north_symbol: bool = True  # raised north symbols at the top-right and bottom-left
+    scale_bar: bool = True  # a raised scale bar under the Braille title, with its distance in Braille
     legend_frames: bool = True  # raised frame around flat samples on the legend
     window_edge: bool = True  # polygon windows: a raised line along the edge of the map
 
@@ -245,6 +246,18 @@ class CheckRules:
 
 
 @dataclass(frozen=True)
+class ScaleBarRules:
+    """The scale bar under the Braille title (model3d.scale_bar); on with features.scale_bar."""
+
+    max_length_mm: float = 80.0  # the bar shows the longest round distance (10, 20, 50, 100 m...) up to this long
+    min_length_mm: float = 10.0  # no bar if not even this much fits beside the north symbol
+    height_mm: float = 1.0  # how high the bar and its ticks stand above the plate
+    width_mm: float = 1.5  # width of the bar and of the ticks
+    tick_mm: float = 5.0  # length of the ticks at the two ends; the ticks between them are 3/5 as long
+    min_tick_spacing_mm: float = 6.0  # ticks between the ends only if they are at least this far apart
+
+
+@dataclass(frozen=True)
 class ReliefRules:
     """Slopes as terraces (relief.py): off by default, experimental."""
 
@@ -295,6 +308,7 @@ class Config:
     size: SizeRules = field(default_factory=SizeRules)
     position: PositionRules = field(default_factory=PositionRules)
     relief: ReliefRules = field(default_factory=ReliefRules)
+    scale_bar: ScaleBarRules = field(default_factory=ScaleBarRules)
     validate: CheckRules = field(default_factory=CheckRules)
     recognition: Recognition = field(default_factory=Recognition)
     size_scale_used: float = 1.0  # set per map by estimate_size_scale (compose.classify)
@@ -467,7 +481,7 @@ def _section(kind, d: dict, name: str):
     return kind(**d)
 
 
-TOP_SECTIONS = ("output", "size", "position", "relief", "features", "smoothing", "generalize", "tactile", "validate",
+TOP_SECTIONS = ("output", "size", "position", "scale_bar", "relief", "features", "smoothing", "generalize", "tactile", "validate",
                 "recognition", "braille", "texture", "class", "symbol")
 
 
@@ -518,6 +532,7 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         size=_section(SizeRules, data.get("size", {}), "size"),
         position=_section(PositionRules, data.get("position", {}), "position"),
         relief=_relief(data.get("relief", {})),
+        scale_bar=_scale_bar(data.get("scale_bar", {})),
         validate=_section(CheckRules, data.get("validate", {}), "validate"),
         recognition=_recognition(data.get("recognition", {})),
         textures=library,
@@ -532,6 +547,15 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         legend_max_height_mm=float(out.legend_max_height_mm),
         sources=list(sources or []),
     )
+
+
+def _scale_bar(d: dict) -> ScaleBarRules:
+    b = _section(ScaleBarRules, d, "scale_bar")
+    if min(b.max_length_mm, b.min_length_mm, b.height_mm, b.width_mm, b.tick_mm) <= 0:
+        raise ValueError("every size in [scale_bar] must be above 0")
+    if b.min_length_mm > b.max_length_mm:
+        raise ValueError("scale_bar.min_length_mm must be at most scale_bar.max_length_mm")
+    return b
 
 
 def _relief(d: dict) -> ReliefRules:
@@ -639,6 +663,7 @@ def settings_dict(cfg: Config) -> dict:
         "size": asdict(cfg.size),
         "position": asdict(cfg.position),
         "relief": {**asdict(cfg.relief), "classes": list(cfg.relief.classes)},
+        "scale_bar": asdict(cfg.scale_bar),
         "features": asdict(cfg.features),
         "smoothing": asdict(cfg.smoothing),
         "generalize": asdict(cfg.generalize),

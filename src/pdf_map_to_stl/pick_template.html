@@ -53,13 +53,28 @@
   <main>
     <h1>Pick the map window</h1>
     <div class="sub" id="source"></div>
+    <div class="row"><label>Scale of this map 1:<input id="mscale" type="number" min="500" max="100000" step="500"
+      aria-label="Scale of the printed map, 1 to"></label></div>
+    <p class="hint" id="mscaleHint"></p>
     <fieldset>
       <legend>Shape</legend>
       <div class="row">
         <label><input type="radio" name="mode" value="rect" checked> Rectangle</label>
         <label><input type="radio" name="mode" value="poly"> Polygon</label>
+        <label><input type="radio" name="mode" value="fixed"> Fixed size</label>
       </div>
     </fieldset>
+    <div id="fixedBox" hidden>
+      <div class="row">
+        <label>Plate <input id="plateW" type="number" min="50" max="1000" step="1" value="170" aria-label="Plate width">
+          × <input id="plateH" type="number" min="50" max="1000" step="1" value="170" aria-label="Plate height"> mm</label>
+      </div>
+      <div class="row">
+        <label>Tactile map at 1:<input id="tscale" type="number" min="100" max="100000" step="50" value="1000"
+          aria-label="Scale of the tactile map, 1 to"></label>
+      </div>
+      <p class="hint" id="fixedInfo" role="status" aria-live="polite"></p>
+    </div>
     <p class="hint" id="howto"></p>
     <div class="row"><button id="zin">Zoom +</button><button id="zout">Zoom −</button>
       <button id="undo">Undo point</button><button id="close">Close polygon</button><button id="clear">Clear</button></div>
@@ -85,9 +100,20 @@
     <p id="geoStatus" class="hint" role="status" aria-live="polite"></p>
 
     <h2>Size</h2>
+    <div id="widthBox">
     <label>Printed map width <input id="width" type="number" min="20" max="1000" step="10" placeholder="auto"> mm</label>
     <div class="hint" id="scale">Leave it empty: the build suggests the size from the map's details
       (<code>pdf-map-to-stl size</code> shows it without building).</div>
+    </div>
+    <p class="hint" id="widthFixed" hidden>Fixed size: the plate size above sets the size.</p>
+
+    <h2>Options</h2>
+    <label><input type="checkbox" id="scalebar" checked> Scale bar under the Braille title: a raised bar as long
+      as a round distance on the ground (for example 50 m), with the distance in Braille</label>
+    <label><input type="checkbox" id="slopes"> Show slopes (experimental): the ground rises one step at every
+      contour line, starting from the lakes and canals, which are taken as the lowest ground</label>
+    <p class="hint">Slopes are off unless you tick them; check them on <code>relief_levels.png</code>
+      (darker = higher).</p>
 
     <h2>Command</h2>
     <p class="hint">Run from the project folder:</p>
@@ -101,6 +127,7 @@ const $ = id => document.getElementById(id);
 const img = $("page"), wrap = $("wrap"), svg = $("overlay");
 let zoom = 1, mode = "rect", rect = null, pts = [], closed = false, drag = null;
 let geo = [], placing = false;  // position points: {x, y, text}
+let centre = null, moving = false;  // fixed size: the middle of the plate on the page (mm)
 
 img.src = PAGE.image;
 $("source").textContent = `${PAGE.pdf} · page ${PAGE.page + 1}/${PAGE.pages} · ${PAGE.width_mm} × ${PAGE.height_mm} mm`;
@@ -108,7 +135,13 @@ const HOWTO = {
   rect: "Drag a rectangle on the map. Leave it empty to convert the whole page.",
   poly: "Click the corners of the window one by one; click the first point (or Close polygon) to finish. "
       + "Or type the points below.",
+  fixed: "Type the plate size and the two scales, then click on the map where the middle of the plate should go, "
+       + "or drag the square. The model comes out exactly this size.",
 };
+$("mscale").value = PAGE.map_scale || "";
+$("mscaleHint").textContent = PAGE.map_scale ? "Read from the map page."
+  : "Not written on the page as text: type it (it is printed on the map), so the model gets its scale in the "
+    + "title and a scale bar.";
 
 const baseWidth = () => Math.min(window.innerWidth - 440, 1400);
 function layout() { img.style.width = baseWidth() * zoom + "px"; draw(); }
@@ -125,8 +158,13 @@ function draw() {
   svg.setAttribute("viewBox", `0 0 ${PAGE.width_mm} ${PAGE.height_mm}`);
   svg.setAttribute("preserveAspectRatio", "none");
   let html = "";
+  const fr = mode === "fixed" ? fixedRect() : null;
   if (mode === "rect" && rect) {
     html = `<rect class="shape" x="${rect[0]}" y="${rect[1]}" width="${rect[2] - rect[0]}" height="${rect[3] - rect[1]}"/>`;
+  } else if (fr) {
+    const cx = (fr[0] + fr[2]) / 2, cy = (fr[1] + fr[3]) / 2, d = 6 * mmPerPx();
+    html = `<rect class="shape" x="${fr[0]}" y="${fr[1]}" width="${fr[2] - fr[0]}" height="${fr[3] - fr[1]}"/>`
+      + `<path class="shape" d="M${cx - d},${cy} H${cx + d} M${cx},${cy - d} V${cy + d}"/>`;
   } else if (mode === "poly" && pts.length) {
     const list = pts.map(p => p.join(",")).join(" ");
     html = closed ? `<polygon class="shape" points="${list}"/>` : `<polyline class="shape open" points="${list}"/>`;
@@ -139,8 +177,45 @@ function draw() {
   svg.innerHTML = html;
 }
 
-// The window as --crop numbers: 4 for a rectangle, 6 or more for a polygon.
+// Fixed size: the part of the page that fills a plate of the typed size at the typed
+// scale. The margins are the usual ones (one line of Braille title, north symbols); the
+// build keeps the plate at exactly this size even if the title needs more room.
+function fixedSize() {
+  const W = Number($("plateW").value), H = Number($("plateH").value);
+  const N = Number($("tscale").value), M = Number($("mscale").value);
+  if (!(W > 0 && H > 0 && N > 0 && M > 0)) return null;
+  const k = M / N, mapH = H - PAGE.margins_mm[0] - PAGE.margins_mm[1];  // k: plate mm per page mm
+  return { W, H, N, M, mapH, w: W / k, h: Math.max(mapH, 0) / k };
+}
+function fixedRect() {
+  const s = fixedSize();
+  if (!s || s.mapH <= 0 || !centre) return null;
+  const x0 = Math.min(Math.max(centre[0] - s.w / 2, 0), Math.max(0, PAGE.width_mm - s.w));
+  const y0 = Math.min(Math.max(centre[1] - s.h / 2, 0), Math.max(0, PAGE.height_mm - s.h));
+  return [x0, y0, x0 + s.w, y0 + s.h];
+}
+function fixedInfo() {
+  const s = fixedSize(), el = $("fixedInfo");
+  let text, bad = true;
+  if (!$("mscale").value) text = "Type the scale of this map at the top of this panel (for example 4000 for 1:4000).";
+  else if (!s) text = "Type the plate size and both scales.";
+  else if (s.mapH <= 0) text = `A plate ${s.H} mm high leaves no room for the map: the Braille title and the north `
+    + `symbols need ${PAGE.margins_mm[0] + PAGE.margins_mm[1]} mm of it.`;
+  else if (s.w > PAGE.width_mm || s.h > PAGE.height_mm) text = `At 1:${s.N} this plate needs ${f(s.w)} × ${f(s.h)} mm `
+    + "of the map page, more than the whole page: choose a larger scale number or a smaller plate.";
+  else {
+    bad = false;
+    text = `The map fills ${s.W} × ${f(s.mapH)} mm of the plate; the rest holds the Braille title and the north `
+      + `symbols. On the map page this is ${f(s.w)} × ${f(s.h)} mm. Leave about 5 mm free around the plate on `
+      + "the printer bed: on a 180 × 180 mm bed (A1 mini), a plate of up to about 170 × 170 mm.";
+  }
+  el.textContent = text;
+  el.className = bad ? "hint bad" : "hint";
+}
+
+// The window as --crop numbers: 4 for a rectangle (or a fixed size), 6 or more for a polygon.
 function window_() {
+  if (mode === "fixed") return fixedRect();
   if (mode === "rect") return rect ? rect : null;
   return closed && pts.length >= 3 ? pts.flat() : null;
 }
@@ -156,6 +231,7 @@ wrap.addEventListener("pointerdown", ev => {
     $(`geoText${geo.length - 1}`).focus();
     return;
   }
+  if (mode === "fixed") { centre = p; moving = true; wrap.setPointerCapture(ev.pointerId); update(); return; }
   if (mode === "poly") {
     if (closed) { pts = []; closed = false; }
     const first = pts[0], near = first && Math.hypot(first[0] - p[0], first[1] - p[1]) < 8 * mmPerPx();
@@ -166,12 +242,14 @@ wrap.addEventListener("pointerdown", ev => {
   drag = p; rect = null; wrap.setPointerCapture(ev.pointerId); update();
 });
 wrap.addEventListener("pointermove", ev => {
+  if (moving) { centre = toMm(ev); update(); return; }
   if (!drag) return;
   const p = toMm(ev);
   rect = [Math.min(drag[0], p[0]), Math.min(drag[1], p[1]), Math.max(drag[0], p[0]), Math.max(drag[1], p[1])];
   update();
 });
 wrap.addEventListener("pointerup", () => {
+  moving = false;
   if (!drag) return;
   drag = null;
   if (rect && (rect[2] - rect[0] < 2 || rect[3] - rect[1] < 2)) rect = null;   // a click, not a drag
@@ -184,7 +262,13 @@ function command() {
   if (PAGE.page) c += ` --page ${PAGE.page}`;
   const w = window_();
   if (w) c += ` --crop ${w.map(f).join(",")}`;
-  if ($("width").value) c += ` --width ${$("width").value}`;
+  const M = Number($("mscale").value);
+  if (M > 0 && M !== PAGE.map_scale) c += ` --map-scale ${M}`;
+  const s = mode === "fixed" && w ? fixedSize() : null;
+  if (s) c += ` --plate ${s.W},${s.H} --scale ${s.N}`;
+  else if (mode !== "fixed" && $("width").value) c += ` --width ${$("width").value}`;
+  if (!$("scalebar").checked) c += " --set features.scale_bar=false";
+  if ($("slopes").checked) c += " --set relief.enabled=true";
   for (const g of geo) {
     const ll = parseLatLon(g.text);
     if (ll) c += ` --geo ${f(g.x)},${f(g.y)},${ll[0].toFixed(7)},${ll[1].toFixed(7)}`;
@@ -253,32 +337,45 @@ function update(syncFields = true) {
   draw();
   const w = window_();
   if (syncFields) {
-    rectFields.forEach((el, i) => { el.value = mode === "rect" && rect ? f(rect[i]) : ""; });
+    const shown = mode === "rect" ? rect : mode === "fixed" ? w : null;
+    rectFields.forEach((el, i) => { el.value = shown ? f(shown[i]) : ""; el.disabled = mode === "fixed" && i >= 2; });
     $("points").value = mode === "poly" && pts.length ? pts.map(p => p.map(f).join(",")).join(", ") : "";
   }
   let text = "Whole page";
   if (w) {
     const xs = w.filter((_, i) => i % 2 === 0), ys = w.filter((_, i) => i % 2 === 1);
     const bw = Math.max(...xs) - Math.min(...xs), bh = Math.max(...ys) - Math.min(...ys);
-    text = `--crop ${w.map(f).join(",")}\n(${mode === "rect" ? "rectangle" : `polygon of ${pts.length} points`}, `
-         + `${f(bw)} × ${f(bh)} mm on the map page)`;
+    const kind = mode === "rect" ? "rectangle" : mode === "fixed" ? "fixed size" : `polygon of ${pts.length} points`;
+    text = `--crop ${w.map(f).join(",")}\n(${kind}, ${f(bw)} × ${f(bh)} mm on the map page)`;
+  } else if (mode === "fixed") {
+    text = "Fixed size: see the message under the plate size.";
   } else if (mode === "poly" && pts.length) {
     text = `${pts.length} point${pts.length > 1 ? "s" : ""}; close the polygon to finish.`;
   }
   $("crop").textContent = text;
   $("cmd").textContent = command();
+  fixedInfo();
   $("undo").disabled = mode !== "poly" || !pts.length;
   $("close").disabled = mode !== "poly" || closed || pts.length < 3;
 }
 
 document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", () => {
-  mode = r.value; $("howto").textContent = HOWTO[mode]; update();
+  mode = r.value; $("howto").textContent = HOWTO[mode];
+  if (mode === "fixed" && !centre) {  // start where the rectangle was, or in the middle of the page
+    centre = rect ? [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2] : [PAGE.width_mm / 2, PAGE.height_mm / 2];
+  }
+  $("fixedBox").hidden = $("widthFixed").hidden = mode !== "fixed";
+  $("widthBox").hidden = mode === "fixed";
+  update();
 }));
+["plateW", "plateH", "tscale", "mscale"].forEach(id => $(id).addEventListener("input", () => update()));
+$("slopes").addEventListener("change", () => update(false));
+$("scalebar").addEventListener("change", () => update(false));
 $("howto").textContent = HOWTO[mode];
 $("width").addEventListener("input", () => update(false));
 $("zin").addEventListener("click", () => { zoom = Math.min(8, zoom * 1.5); layout(); });
 $("zout").addEventListener("click", () => { zoom = Math.max(0.25, zoom / 1.5); layout(); });
-$("clear").addEventListener("click", () => { rect = null; pts = []; closed = false; update(); });
+$("clear").addEventListener("click", () => { rect = null; pts = []; closed = false; centre = null; update(); });
 $("undo").addEventListener("click", () => { closed = false; pts.pop(); update(); });
 $("close").addEventListener("click", () => { if (pts.length >= 3) closed = true; update(); });
 
@@ -286,6 +383,12 @@ $("close").addEventListener("click", () => { if (pts.length >= 3) closed = true;
 const rectFields = ["cx0", "cy0", "cx1", "cy1"].map(id => $(id));
 rectFields[0].max = rectFields[2].max = PAGE.width_mm; rectFields[1].max = rectFields[3].max = PAGE.height_mm;
 function fromRectFields() {
+  if (mode === "fixed") {  // Left and Top move the plate; its size stays
+    const s = fixedSize(), l = Number(rectFields[0].value), t = Number(rectFields[1].value);
+    if (s && rectFields[0].value !== "" && rectFields[1].value !== "") centre = [l + s.w / 2, t + s.h / 2];
+    update();
+    return;
+  }
   const v = rectFields.map(el => Number(el.value));
   if (rectFields.some(el => el.value === "") || v.some(Number.isNaN)) return;
   const r = [Math.min(v[0], v[2]), Math.min(v[1], v[3]), Math.max(v[0], v[2]), Math.max(v[1], v[3])];

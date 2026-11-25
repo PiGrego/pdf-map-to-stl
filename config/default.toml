@@ -71,8 +71,22 @@ low = "water"             # the bands with lakes or canals are the lowest
 textures = true           # raised patterns on areas; false = every area smooth (texture it in the slicer)
 standard_symbols = true   # trees, boulders, crosses as standard tactile symbols; false = as drawn on the map
 north_symbol = true       # raised north symbols at the top-right and bottom-left corners
+scale_bar = true          # a raised scale bar under the Braille title, with its distance in Braille
 legend_frames = true      # raised frame around flat samples (paved) on the legend
 window_edge = true        # polygon windows: a raised line along the map's edge (outside it the plate is flat)
+
+# ---------------------------------------------------------------- scale bar
+# Under the Braille title (features.scale_bar): a raised bar as long as a round distance
+# on the ground (10, 20, 50, 100 m...), a tick at each end and ticks between them, and
+# the distance in Braille at its right. It needs the map's scale (read from the page,
+# or --map-scale). Sizes in mm on the model.
+[scale_bar]
+max_length_mm = 80        # the longest round distance up to this long
+min_length_mm = 10        # no bar if not even this much fits beside the north symbol
+height_mm = 1.0           # how high the bar and its ticks stand above the plate
+width_mm = 1.5            # width of the bar and of the ticks
+tick_mm = 5.0             # length of the end ticks; the ticks between them are 3/5 as long
+min_tick_spacing_mm = 6.0 # ticks between the ends only if they are at least this far apart
 
 # ---------------------------------------------------------------- smoothing
 # How outlines are drawn. Sizes are mm on the model, except curve_step_mm (on the PDF).

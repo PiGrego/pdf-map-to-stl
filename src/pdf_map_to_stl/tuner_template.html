@@ -192,7 +192,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const CLASSES = MODEL.classes;
 const BY_NAME = Object.fromEntries(CLASSES.map(c => [c.class, c]));
 const TEXTURES = MODEL.layers.filter(l => l.role === "texture");
-const FIXED_ROLES = ["braille", "north", "frame", "edge", "pin"];  // fixed size: not tuned here
+const FIXED_ROLES = ["braille", "north", "frame", "edge", "pin", "scale_bar"];  // fixed size: not tuned here
 const FIXED = MODEL.layers.filter(l => FIXED_ROLES.includes(l.role));
 const TEXTURE_TEXT = Object.fromEntries(MODEL.texture_library.map(t => [t.name, t.text]));
 const initial = {

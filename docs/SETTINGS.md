@@ -133,8 +133,28 @@ higher) and the SLOPES section of `description.txt`.
 | `textures` | `true` | raised patterns on areas; `false` = every area smooth |
 | `standard_symbols` | `true` | trees, boulders and man-made objects drawn as standard tactile symbols (dot, ring, cross); `false` = as drawn on the map |
 | `north_symbol` | `true` | raised north symbols at the top-right and bottom-left corners |
+| `scale_bar` | `true` | a raised scale bar under the Braille title, with its distance in Braille (see `[scale_bar]`) |
 | `legend_frames` | `true` | a raised frame around flat samples (paved) on the legend, so they can be found |
 | `window_edge` | `true` | polygon windows: a raised line just outside the polygon, so the edge of the map can be felt (outside it the plate is flat, like paved ground) |
+
+### `[scale_bar]`: the scale bar
+
+Under the Braille title, a raised bar as long as a round distance on the ground (1, 2
+or 5 times 1, 10, 100... m: at 1:1000, 50 m is 50 mm), with a tick at each end and ticks
+between them (50 m: a tick every 10 m), and the distance in Braille at its right. It sits
+beside the top-right north symbol, where the plate is usually empty, so it rarely makes
+the plate taller. It needs the map's scale (read from the page, or `--map-scale`);
+`description.txt` says what the bar measures. Switch it off with
+`--set features.scale_bar=false` (or untick it in `pick.html`). Sizes in mm on the model.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `max_length_mm` | `80` | the longest round distance up to this long |
+| `min_length_mm` | `10` | no bar if not even this much fits beside the north symbol |
+| `height_mm` | `1.0` | how high the bar and its ticks stand above the plate |
+| `width_mm` | `1.5` | width of the bar and of the ticks |
+| `tick_mm` | `5.0` | length of the end ticks; the ticks between them are 3/5 as long |
+| `min_tick_spacing_mm` | `6.0` | ticks between the ends only if they are at least this far apart |
 
 ### `[class.NAME]`: each tactile class
 

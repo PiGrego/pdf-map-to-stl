@@ -106,7 +106,8 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
                               f"texture of {layer.on}"))
 
     notes = {"north": "north symbols (the ring end points north)", "frame": "frames around flat legend samples",
-             "edge": "raised line along the edge of the map window"}
+             "edge": "raised line along the edge of the map window",
+             "scale_bar": f"scale bar: {t.scale_bar.get('label', '')} on the ground between its end ticks"}
     for layer in (lyr for lyr in t.layers if lyr.role in notes):
         parts.append(Part(layer.role, layer.role, _column(layer.geom, base_z, base_z + layer.height_mm),
                           base_z + layer.height_mm, notes[layer.role]))
