@@ -36,6 +36,7 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    ▼
  map model (PDF points)
    │  size.py       suggested print size from the passages and parts of the map
+   │  relief.py     slopes (optional): bands between contours, lowest where the water is
    │  model3d.py    scale to print size, redraw lines along their centre (min width,
    │                caps and joins from [smoothing])
    │  generalize.py (simplify), remove artefact slivers, open narrow passages, widen thin
@@ -52,7 +53,8 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    ├─ describe.py       description.txt (plain text: holding, legend, scale, automatic
    │                    changes, check)
    ├─ config.py         settings_used.toml (every setting the build used)
-   ├─ preview.py    relief_preview.png, legend_preview.png, tactile_check.png
+   ├─ preview.py    relief_preview.png, legend_preview.png, tactile_check.png,
+   │                relief_levels.png (slopes)
    ├─ tuner.py      tuner.html   (heights, switches, textures, shapes → settings.toml)
    ├─ report.py     symbols.csv, layers.svg, report.json
    └─ validate.py   classes.png, validation_errors.png (agreement with the rendered PDF)
@@ -75,6 +77,7 @@ arguments.
 | `compose.py` | visible terrain + objects | `build_map` |
 | `model3d.py` | layers in mm, textures, standard symbols, Braille title, north symbols, solid, STL | `build_layers`, `build_solid`, `write_stl` |
 | `geo.py` | position points: coordinates in any form, pins, the distance check | `parse_geo`, `pins`, `check_points` |
+| `relief.py` | slopes (optional): bands between contour lines and their levels | `find_relief` |
 | `size.py` | suggested print size from the map's details and scale | `suggest_size` |
 | `generalize.py` | tactile simplification and optional smoothing of the layers | `generalize` |
 | `braille.py` | text → Braille cells → dot positions in mm | `to_cells`, `dot_centres` |

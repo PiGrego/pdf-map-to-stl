@@ -40,6 +40,7 @@ from .config import Config, Texture
 from .generalize import generalize
 from .geo import GeoPoint, pins
 from .geometry import polygons
+from .relief import Relief
 from .scene import PT_TO_MM
 
 MIN_FLOOR_MM = 0.4  # a recess always leaves at least this much plate under it
@@ -48,6 +49,7 @@ MIN_PRINT_AREA_MM2 = 0.05  # polygons smaller than this are numerical dust, not 
 # Writing the STL (printable_mesh): far below what a printer or a finger can resolve.
 MERGE_MM = 1e-4  # edges shorter than this are collapsed
 SEPARATE_MM = 0.002  # volumes that touch along an edge are moved at most this far apart there
+LIFT_CUT_MM = 0.2  # slopes (relief): everything above this height moves up with its band
 
 
 @dataclass
@@ -75,6 +77,7 @@ class TactileModel:
     corner_mm: float = 0.0
     generalized: dict = field(default_factory=dict)  # what generalize.py changed
     positions: list[dict] = field(default_factory=list)  # position points: where they are on the plate
+    relief: list[tuple[BaseGeometry, float]] = field(default_factory=list)  # slopes: (area, lift in mm)
 
     def tactile_layers(self) -> list[Layer]:
         """Terrain and object layers (the map's content, without textures and Braille)."""
@@ -101,6 +104,7 @@ def build_layers(
     region: tuple[float, float, float, float] | None = None,
     title: str | None = None,
     geo: tuple[GeoPoint, ...] = (),
+    relief: Relief | None = None,
 ) -> TactileModel:
     """Tactile layers at print scale.
 
@@ -203,9 +207,21 @@ def build_layers(
         r = spec.dot_diameter_mm / 2
         layers.append(Layer("braille", "braille", spec.dot_height_mm, unary_union([Point(p).buffer(r, 8) for p in dots])))
 
+    terraces = []
+    if relief is not None:
+        by_level: dict[int, list] = {}
+        for g, lv in relief.bands:
+            if lv > 0:
+                by_level.setdefault(lv, []).append(g)
+        for lv, gs in sorted(by_level.items()):
+            g = _to_model(unary_union(gs), rect, scale).intersection(frame)
+            g = affinity.translate(g, -x0, -y0 + bottom).intersection(plate)
+            if not g.is_empty:
+                terraces.append((g, lv * cfg.relief.step_mm))
+
     return TactileModel(
         w, total_h, cfg.base_mm, scale, layers, plate, (0.0, bottom, w, bottom + h), dots, spec, " / ".join(lines), c,
-        report.as_dict(), positions,
+        report.as_dict(), positions, terraces,
     )
 
 
@@ -398,11 +414,34 @@ def build_solid(t: TactileModel) -> Manifold:
     on_top += [braille_dot(x, y, t.base_mm, t.braille_spec) for x, y in t.braille_dots]
     if on_top:
         solid = Manifold.batch_boolean([solid, *on_top], OpType.Add)
+    solid = lift(solid, t.relief, fill=True)
     # Safety net: keep only bodies with real volume (one plate with everything on it).
     parts = solid.decompose()
     if len(parts) > 1:
         solid = Manifold.compose([p for p in parts if p.volume() > MIN_PRINT_AREA_MM2 * 0.1])
     return solid
+
+
+def lift(solid: Manifold, terraces: list[tuple[BaseGeometry, float]], fill: bool) -> Manifold:
+    """Slopes: everything above ``LIFT_CUT_MM`` inside each terrace area moves up by its
+    lift, so the ground and all that stands on it rise together. With ``fill`` (the plate,
+    or the whole model), the gap opened under it is filled."""
+    if not terraces or solid.is_empty():
+        return solid
+    upper, below = solid.split_by_plane((0, 0, 1), LIFT_CUT_MM)
+    pieces, prisms = [below], []
+    for area, dz in terraces:
+        cs = _cross_section(area)
+        if cs.is_empty():
+            continue
+        prism = cs.extrude(1000.0).translate((0, 0, LIFT_CUT_MM))
+        prisms.append(prism)
+        pieces.append((upper ^ prism).translate((0, 0, dz)))
+        if fill:
+            pieces.append(cs.extrude(dz).translate((0, 0, LIFT_CUT_MM)))
+    if prisms:
+        pieces.append(upper - Manifold.batch_boolean(prisms, OpType.Add))
+    return Manifold.batch_boolean([p for p in pieces if not p.is_empty()], OpType.Add)
 
 
 def recess_floors(t: TactileModel) -> list[tuple[BaseGeometry, float]]:
