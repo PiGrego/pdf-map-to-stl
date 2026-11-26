@@ -19,13 +19,16 @@ pass it back with ``--settings`` to build the same model again.
 
 from __future__ import annotations
 
+import math
 import statistics
 import tomllib
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
+from shapely.geometry import LineString, Point
+
 from .braille import BrailleSpec
-from .scene import Primitive
+from .scene import PT_TO_MM, Primitive
 
 DOT_TOLERANCE = 0.15
 SCALE_KEEP = 0.1  # an estimated size scale within 10 % of 1 is noise: the rules' own tolerances cover it
@@ -53,6 +56,7 @@ class SymbolRule:
     max_extent_mm: float | None = None
     dot_mm: float | None = None
     pitch_mm: float | None = None
+    vertical: bool = False  # only straight lines standing upright on the page (north lines): see upright_line
 
     def colour_matches(self, rgb: tuple[int, int, int]) -> bool:
         return max(abs(a - b) for a, b in zip(self.rgb, rgb)) <= self.rgb_tol
@@ -74,7 +78,26 @@ class SymbolRule:
         for want, got in ((self.dot_mm, p.dot_mm), (self.pitch_mm, p.pitch_mm)):
             if want is not None and abs(got - want * scale) > DOT_TOLERANCE * want * scale:
                 return False
-        return True
+        return not self.vertical or upright_line(p)
+
+
+VERTICAL_TOLERANCE_DEG = 3.0  # rules with vertical = true: lines at most this far from the page's vertical...
+STRAIGHT_TOLERANCE_MM = 0.1  # ...with no point farther than this from the straight line between their ends
+
+
+def upright_line(p: Primitive) -> bool:
+    """A stroke whose every line is straight and upright on the page, as north lines are
+    (maps are printed with north up); a stream or a canal bends or runs at an angle."""
+    if p.kind != "stroke" or not p.lines:
+        return False
+    for line in p.lines:
+        (x0, y0), (x1, y1) = line.coords[0][:2], line.coords[-1][:2]
+        if math.degrees(math.atan2(abs(x1 - x0), abs(y1 - y0))) > VERTICAL_TOLERANCE_DEG:
+            return False
+        chord = LineString([(x0, y0), (x1, y1)])
+        if max(Point(c).distance(chord) for c in line.coords) * PT_TO_MM > STRAIGHT_TOLERANCE_MM:
+            return False
+    return True
 
 
 def lab(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
@@ -235,6 +258,7 @@ class Recognition:
     size_scale: float | str = "auto"  # sizes in the rules times this; "auto" = from the dot screens found
     colour_match_de: float = 10.0  # an unknown colour takes the nearest rule colour within this distance; 0 = off
     colour_margin_de: float = 3.0  # ...only if every other rule colour is at least this much farther
+    lone_dash_class: str = "footpath"  # a stroke of a cross class that no stroke crosses (a path dash) gets this
 
 
 @dataclass(frozen=True)
@@ -351,7 +375,15 @@ class Config:
             return None  # a known colour: the rules decided already
         dist = sorted((colour_distance(rgb, c), c) for c in {r.rgb for r in self.rules})
         best, colour = dist[0]
-        if best > rec.colour_match_de or (len(dist) > 1 and dist[1][0] - best < rec.colour_margin_de):
+        if best > rec.colour_match_de:
+            return None
+
+        def classes(c):
+            return {r.cls for r in self.rules if r.rgb == c}
+
+        # A close second colour makes the guess unclear only if it means something else
+        # (two shades of paved light brown agree).
+        if any(d - best < rec.colour_margin_de and classes(c) != classes(colour) for d, c in dist[1:]):
             return None
         return colour, best
 
@@ -512,6 +544,7 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
                 max_extent_mm=s.get("max_extent_mm"),
                 dot_mm=s.get("dot_mm"),
                 pitch_mm=s.get("pitch_mm"),
+                vertical=bool(s.get("vertical", False)),
             )
         )
     smoothing = _section(Smoothing, data.get("smoothing", {}), "smoothing")

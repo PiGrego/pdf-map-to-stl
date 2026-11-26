@@ -7,7 +7,11 @@ points), already cut by the clip paths it is drawn inside and by the working are
 One special case matters for orienteering maps: area patterns such as ISOM 402
 ("open land with scattered trees") are exported as a regular grid of small dots,
 trimmed by a clip path that is exactly the area's outline. Such a *dot screen*
-becomes a single ``dots`` primitive whose polygon is that clip outline.
+becomes a single ``dots`` primitive whose polygon is that clip outline. Some exports
+put dots inside a clip as large as the whole map: rows of dots (rows of trees, dotted
+lines) or scattered dots. When the dots cover clearly less than their clip outline,
+they are not a screen: each dot is a fill of its own, as if it had no clip
+(``DOT_REACH``, ``DOT_COVER_SHARE``).
 
 Coordinates: PDF points (1/72 inch) in PyMuPDF's page frame, origin at the top-left
 of the page, y pointing down. This is the same frame PyMuPDF renders in, so no
@@ -23,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pymupdf
+import shapely
 from scipy.spatial import cKDTree
 from shapely import make_valid
 from shapely.geometry import LineString, Polygon, box
@@ -36,6 +41,11 @@ PT_TO_MM = 25.4 / 72.0
 # many fills of one colour and (within this relative spread) one size.
 MIN_SCREEN_DOTS = 16
 SCREEN_SIZE_TOLERANCE = 0.05
+# The area a dot pattern covers: within this many dot distances of a dot. Dots that cover
+# less than this share of their clip outline are a row of dots (or a scattered set), not
+# an area filled to its outline: each dot is then a fill of its own.
+DOT_REACH = 0.75
+DOT_COVER_SHARE = 0.9
 
 Rect = tuple[float, float, float, float]
 # A window on the page, in mm from its top-left corner: 4 numbers are a rectangle (two
@@ -163,14 +173,19 @@ def load_scene(pdf_path: str | Path, page_number: int = 0, crop_mm: Window | Non
 
     prims: list[Primitive] = []
     seen_screens: set[int] = set()
+    rows: set[int] = set()  # clips whose dots do not fill them: rows of dots, each dot on its own
     for paint in paints:
         screen = paint.clips[-1] if paint.clips and paint.clips[-1] in screens else None
-        if screen is not None:
+        if screen is not None and screen not in rows:
             # All dots of a screen become one primitive, emitted at the first dot.
-            if screen not in seen_screens:
-                seen_screens.add(screen)
-                prims.extend(_dot_screen_primitive(screens[screen], clip_region(paint.clips), paint.blend))
-            continue
+            if screen in seen_screens:
+                continue
+            seen_screens.add(screen)
+            region = clip_region(paint.clips)
+            if _fills(screens[screen], region):
+                prims.extend(_dot_screen_primitive(screens[screen], region, paint.blend))
+                continue
+            rows.add(screen)  # not a screen: this dot and the others go on as ordinary fills
         if not _may_reach(paint.d, area):
             continue
         region = clip_region(paint.clips)
@@ -286,10 +301,27 @@ def _is_dot_screen(children: list[dict]) -> bool:
     return float(sizes.std()) <= SCREEN_SIZE_TOLERANCE * float(sizes.mean())
 
 
+def _centres(dots: list[dict]) -> np.ndarray:
+    return np.array([((d["rect"].x0 + d["rect"].x1) / 2, (d["rect"].y0 + d["rect"].y1) / 2) for d in dots])
+
+
+def _fills(dots: list[dict], region: BaseGeometry) -> bool:
+    """Do the dots fill their clip outline, as a dot screen does? A row of dots (a row of
+    trees, a dotted line) in a clip as large as the map does not."""
+    if region.is_empty or region.area <= 0:
+        return True  # nothing of it in the window either way
+    centres = _centres(dots)
+    nearest, _ = cKDTree(centres).query(centres, k=2)
+    reach = DOT_REACH * float(np.median(nearest[:, 1]))
+    cover = shapely.union_all(shapely.box(centres[:, 0] - reach, centres[:, 1] - reach,
+                                          centres[:, 0] + reach, centres[:, 1] + reach))
+    return region.intersection(cover).area >= DOT_COVER_SHARE * region.area
+
+
 def _dot_screen_primitive(dots: list[dict], region: BaseGeometry, blend: str) -> list[Primitive]:
     if region.is_empty or region.area <= 0:
         return []
-    centres = np.array([((d["rect"].x0 + d["rect"].x1) / 2, (d["rect"].y0 + d["rect"].y1) / 2) for d in dots])
+    centres = _centres(dots)
     nearest, _ = cKDTree(centres).query(centres, k=2)
     x0, y0, x1, y1 = region.bounds
     return [
