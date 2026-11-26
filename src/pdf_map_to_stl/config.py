@@ -27,6 +27,7 @@ from pathlib import Path
 
 from shapely.geometry import LineString, Point
 
+from . import i18n
 from .braille import BrailleSpec
 from .scene import PT_TO_MM, Primitive
 
@@ -163,12 +164,8 @@ class Texture:
     name: str = ""
 
     def describe(self) -> str:
-        return {
-            "dots": f"dots every {self.pitch_mm:g} mm",
-            "rings": f"small rings every {self.pitch_mm:g} mm",
-            "lines": f"straight ridges every {self.pitch_mm:g} mm",
-            "waves": f"wavy ridges every {self.pitch_mm:g} mm",
-        }.get(self.kind, self.kind)
+        """The pattern in words, in the current language."""
+        return i18n.t(f"texture.{self.kind}", pitch=i18n.num(self.pitch_mm))
 
 
 @dataclass(frozen=True)
@@ -177,7 +174,7 @@ class TactileClass:
     role: str  # terrain | object | ignore
     height_mm: float = 0.0
     min_width_mm: float = 0.0
-    label: str = ""  # Braille label in the legend (defaults to the class name)
+    label: str = ""  # Braille label in the legend, any language (defaults to the class name)
     texture: Texture | None = None  # raised pattern on top, to tell same-height classes apart
     merge_gaps: bool = True  # objects: merge parts closer than the merge gap (not for trees)
     shape: str = ""  # objects: "dot" | "ring" | "cross" = standard symbol; "" = as drawn
@@ -185,10 +182,15 @@ class TactileClass:
     colour: tuple[int, int, int] | None = None  # display colour, suggested filament colour
     enabled: bool = True  # false: not shown (terrain: its area becomes ``merge_into``)
     merge_into: str = ""  # terrain class that takes the area of this class when it is off
+    profile: str = "flat"  # objects: "flat" (straight sides, flat top) or "dome" (rounded, like a bump)
+    labels: tuple = ()  # (language, label) pairs: the label in each language (label = { it = "...", en = "..." })
 
     @property
     def legend_label(self) -> str:
-        return self.label or self.name.replace("_", " ")
+        """The Braille label in the legend, in the current language if the class has one."""
+        by_language = dict(self.labels)
+        return (by_language.get(i18n.language()) or by_language.get(i18n.FALLBACK) or self.label
+                or next(iter(by_language.values()), "") or self.name.replace("_", " "))
 
 
 @dataclass(frozen=True)
@@ -299,14 +301,23 @@ class PositionRules:
     """Position points (geo.py): pins on the map and their coordinates in Braille."""
 
     pin_mm: float = 3.0  # pin diameter; point 1 is one pin, point 2 two pins side by side
-    pin_height_mm: float = 4.0  # above the plate: higher than anything else, easy to find
+    pin_height_mm: float = 3.0  # above the plate: higher than anything else, easy to find
     decimals: int = 5  # decimals of the degrees in Braille (5 = about 1 m)
+    qr: bool = True  # a QR code of point 1 in the bottom-right margin, which opens it in a map app on a phone
+    qr_link: str = "https://maps.google.com/?q={lat},{lon}"  # what the QR code holds; {lat}, {lon} in degrees
+    qr_module_mm: float = 0.7  # side of one QR square
+    qr_quiet_modules: int = 2  # flat border around the code, in squares (phones need some)
+    qr_height_mm: float = 0.6  # how high the dark squares stand (print them in a dark colour)
+    qr_frame_mm: float = 1.0  # width of the raised frame around the code, to find it by touch
+    qr_frame_height_mm: float = 1.0
 
 
 @dataclass(frozen=True)
 class Output:
     width_mm: float | str = "auto"  # printed map width; "auto" = the suggested size
-    base_mm: float = 2.0  # base plate thickness
+    base_mm: float = 2.2  # base plate thickness
+    heights_include_texture: bool = True  # a class height is the top of its texture, not of the area under it
+    language: str = "it"  # language of the Braille, the legend, description.txt and the messages (i18n)
     top_skin_mm: float = 0.6  # parts export: each area owns this much of the plate under it
     north_height_mm: float = 1.0
     window_edge_mm: float = 1.5  # width of the line along a polygon window's edge
@@ -323,6 +334,8 @@ class Config:
     width_mm: float  # printed map width; 0 = the suggested size
     base_mm: float
     classes: dict[str, TactileClass]
+    heights_include_texture: bool = True
+    language: str = "it"
     rules: list[SymbolRule] = field(default_factory=list)
     tactile: TactileRules = field(default_factory=TactileRules)
     braille: BrailleSpec = field(default_factory=BrailleSpec)
@@ -501,7 +514,9 @@ def load_config(
         _check_overlay(over, data, f"--set {text}")
         data = _merge(data, over)
         sources.append(f"--set {text}")
-    return from_dict(data, sources)
+    cfg = from_dict(data, sources)
+    i18n.set_language(cfg.language)  # every text from here on (Braille, legend, description) in this language
+    return cfg
 
 
 def _section(kind, d: dict, name: str):
@@ -556,14 +571,16 @@ def from_dict(data: dict, sources: list[str] | None = None) -> Config:
         width_mm=0.0 if out.width_mm == "auto" else float(out.width_mm),
         base_mm=float(out.base_mm),
         classes=classes,
+        heights_include_texture=bool(out.heights_include_texture),
+        language=_language(out.language),
         rules=rules,
         tactile=_section(TactileRules, data.get("tactile", {}), "tactile"),
-        braille=_section(BrailleSpec, data.get("braille", {}), "braille"),
+        braille=_braille(data.get("braille", {})),
         features=_section(Features, data.get("features", {}), "features"),
         smoothing=smoothing,
         generalize=_section(Generalize, data.get("generalize", {}), "generalize"),
         size=_section(SizeRules, data.get("size", {}), "size"),
-        position=_section(PositionRules, data.get("position", {}), "position"),
+        position=_position(data.get("position", {})),
         relief=_relief(data.get("relief", {})),
         scale_bar=_scale_bar(data.get("scale_bar", {})),
         validate=_section(CheckRules, data.get("validate", {}), "validate"),
@@ -600,6 +617,28 @@ def _relief(d: dict) -> ReliefRules:
     return ReliefRules(**{**asdict(r), "classes": tuple(r.classes)})
 
 
+def _position(d: dict) -> PositionRules:
+    pr = _section(PositionRules, d, "position")
+    if "{lat}" not in pr.qr_link or "{lon}" not in pr.qr_link:
+        raise ValueError("position.qr_link must contain {lat} and {lon}")
+    if min(pr.qr_module_mm, pr.qr_height_mm, pr.qr_frame_mm, pr.qr_frame_height_mm) <= 0 or pr.qr_quiet_modules < 0:
+        raise ValueError("position: the QR sizes must be above 0 (qr_quiet_modules at least 0)")
+    return pr
+
+
+def _language(code) -> str:
+    if str(code) not in i18n.languages():
+        raise ValueError(f"output.language is one of {', '.join(i18n.languages())}, not {code!r}")
+    return str(code)
+
+
+def _braille(d: dict) -> BrailleSpec:
+    spec = _section(BrailleSpec, d, "braille")
+    if spec.dot_shape not in DOT_SHAPES:
+        raise ValueError(f"braille.dot_shape must be one of {DOT_SHAPES}, not {spec.dot_shape!r}")
+    return spec
+
+
 def _recognition(d: dict) -> Recognition:
     rec = _section(Recognition, d, "recognition")
     s = rec.size_scale
@@ -616,7 +655,9 @@ def _texture(t: dict, where: str, name: str = "") -> Texture:
 
 
 CLASS_KEYS = {"role", "enabled", "merge_into", "height_mm", "min_width_mm", "label", "texture", "merge_gaps",
-              "shape", "size_mm", "colour"}
+              "shape", "size_mm", "colour", "profile"}
+PROFILES = ("flat", "dome")
+DOT_SHAPES = ("dome", "cone")
 
 
 def _tactile_class(name: str, c: dict, library: dict[str, Texture]) -> TactileClass:
@@ -641,12 +682,20 @@ def _tactile_class(name: str, c: dict, library: dict[str, Texture]) -> TactileCl
     shape = "" if shape == "as_drawn" else shape
     if shape and shape not in SHAPES:
         raise ValueError(f"class {name}: shape must be one of {SHAPES} or as_drawn, not {shape!r}")
+    profile = str(c.get("profile", "flat"))
+    if profile not in PROFILES:
+        raise ValueError(f"class {name}: profile must be one of {PROFILES}, not {profile!r}")
+    label = c.get("label", "")
+    if isinstance(label, dict):
+        labels, label = tuple(sorted((str(k), str(v)) for k, v in label.items())), ""
+    else:
+        labels, label = (), str(label)
     return TactileClass(
         name,
         role,
         float(c.get("height_mm", 0.0)),
         float(c.get("min_width_mm", 0.0)),
-        str(c.get("label", "")),
+        label,
         texture,
         bool(c.get("merge_gaps", True)),
         shape,
@@ -654,6 +703,8 @@ def _tactile_class(name: str, c: dict, library: dict[str, Texture]) -> TactileCl
         tuple(c["colour"]) if "colour" in c else None,
         bool(c.get("enabled", True)),
         str(c.get("merge_into", "")),
+        profile,
+        labels,
     )
 
 
@@ -680,14 +731,15 @@ def settings_dict(cfg: Config) -> dict:
             d["texture"] = (tc.texture.name or _texture_dict(tc.texture)) if tc.texture else "none"
         if tc.role == "object":
             d.update(shape=tc.shape or "as_drawn", size_mm=tc.size_mm, min_width_mm=tc.min_width_mm,
-                     merge_gaps=tc.merge_gaps)
-        d["label"] = tc.legend_label
+                     merge_gaps=tc.merge_gaps, profile=tc.profile)
+        d["label"] = dict(tc.labels) if tc.labels else tc.legend_label
         if tc.colour:
             d["colour"] = list(tc.colour)
         classes[name] = d
     return {
         "output": {
             "width_mm": round(cfg.width_mm, 3) if cfg.width_mm else "auto", "base_mm": cfg.base_mm,
+            "heights_include_texture": cfg.heights_include_texture, "language": cfg.language,
             "top_skin_mm": cfg.top_skin_mm, "north_height_mm": cfg.north_height_mm,
             "window_edge_mm": cfg.window_edge_mm, "window_edge_height_mm": cfg.window_edge_height_mm,
             "orientation_corner_mm": cfg.orientation_corner_mm, "title": cfg.title, "map_scale": cfg.map_scale,

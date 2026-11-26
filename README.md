@@ -122,6 +122,12 @@ python -m venv .venv
 Below, `pdf-map-to-stl` means `.venv\Scripts\pdf-map-to-stl` (or just `pdf-map-to-stl`
 after `.venv\Scripts\activate`).
 
+**Language.** Everything a reader touches or hears (the Braille on the plates, the
+legend, `description.txt`) and every page and message is in Italian by default, or in
+English with `--lang en` (`output.language`). Braille follows the code of the language:
+Italian Braille has its own accented letters and punctuation. The texts are in
+`src/pdf_map_to_stl/locales/`: copy `en.toml` to add a language.
+
 ## Make a tactile map, step by step
 
 **1. Pick the window**

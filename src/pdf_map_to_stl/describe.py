@@ -1,9 +1,9 @@
-"""``description.txt``: the model explained in plain text.
+"""``description.txt``: the model explained in plain text, in the build's language.
 
 Written for screen readers and for sighted helpers alike: short lines, lists rather
 than tables, no colours. It says how to hold the model, what each height and texture
 means (the legend), the scale, every change the tool made on its own (and the setting
-that controls it), and what the tactile check found.
+that controls it), and what the tactile check found. The texts are in ``locales/``.
 """
 
 from __future__ import annotations
@@ -13,15 +13,16 @@ from pathlib import Path
 
 from .compose import Classified
 from .config import Config
+from .i18n import num, t
 from .legend import classes_in_model, feel
 from .model3d import TactileModel
 from .scene import PT_TO_MM
 from .tactile_check import summary_lines
 
 
-def tactile_scale(cfg: Config, t: TactileModel) -> float:
+def tactile_scale(cfg: Config, tm: TactileModel) -> float:
     """Scale of the model (e.g. 1000 for 1:1000), or 0 if the map scale is unknown."""
-    return cfg.map_scale / (t.scale / PT_TO_MM) if cfg.map_scale else 0.0
+    return cfg.map_scale / (tm.scale / PT_TO_MM) if cfg.map_scale else 0.0
 
 
 def _name(cfg: Config, cls: str) -> str:
@@ -29,10 +30,10 @@ def _name(cfg: Config, cls: str) -> str:
     return tc.legend_label if tc and tc.role != "ignore" else cls.replace("_", " ")
 
 
-def automatic_changes(cfg: Config, t: TactileModel, items: list[Classified]) -> list[str]:
+def automatic_changes(cfg: Config, tm: TactileModel, items: list[Classified]) -> list[str]:
     """Every decision the tool took on its own, in words, with the setting behind it."""
     sm, gen, f = cfg.smoothing, cfg.generalize, cfg.features
-    lines = ["Settings used: " + ", then ".join(cfg.sources) + ". All values are in settings_used.toml."]
+    lines = [t("describe.settings_used", sources=t("describe.then").join(cfg.sources))]
 
     # Which map symbols became which tactile class, and which were left out.
     symbols: dict[str, set[str]] = defaultdict(set)
@@ -45,180 +46,164 @@ def automatic_changes(cfg: Config, t: TactileModel, items: list[Classified]) -> 
             symbols[c.cls].add(c.isom)
             if c.source and c.source != c.cls:
                 merged[c.cls].add(c.source)
-    shown = {lyr.cls for lyr in t.tactile_layers()}
+    shown = {lyr.cls for lyr in tm.tactile_layers()}
     if cfg.size_scale_used != 1.0:
-        lines.append(f"Symbol sizes in the rules (line widths, dot screens) multiplied by {cfg.size_scale_used:g} "
-                     f"for this PDF ({cfg.size_scale_note}; recognition.size_scale).")
+        lines.append(t("describe.size_scale", factor=num(cfg.size_scale_used), note=cfg.size_scale_note))
     nearest = sorted({c.isom for c in items if "[nearest colour" in c.isom})
     if nearest:
-        lines.append(f"{len(nearest)} kinds of symbol recognised by the nearest rule colour, not an exact one "
-                     "(recognition.colour_match_de): check them in symbols.csv.")
-    lines.append("Map symbols grouped into tactile classes (the [[symbol]] rules of the config):")
+        lines.append(t("describe.nearest_one") if len(nearest) == 1 else t("describe.nearest", n=len(nearest)))
+    lines.append(t("describe.grouped"))
     for cls in sorted(symbols, key=lambda c: (cfg.classes[c].role, c)):
         if cls not in shown:
             continue
-        extra = "".join(f" ({_name(cfg, s)} is switched off, so it is shown as {_name(cfg, cls)}: "
-                        f"class.{s}.enabled)" for s in sorted(merged[cls]))
+        extra = "".join(t("describe.merged", off=_name(cfg, s), shown=_name(cfg, cls), cls=s) for s in sorted(merged[cls]))
         lines.append(f"- {_name(cfg, cls)}: " + "; ".join(sorted(symbols[cls])) + extra + ".")
     if hidden:
-        off = [f"{_name(cfg, s)} (switched off)" if s in cfg.classes and cfg.classes[s].role != "ignore"
+        off = [t("describe.switched_off", name=_name(cfg, s)) if s in cfg.classes and cfg.classes[s].role != "ignore"
                else _name(cfg, s) for s in sorted(hidden)]
-        lines.append("Not shown: " + ", ".join(off) + ". Switch a class on with class.NAME.enabled = true; "
-                     "classes with role ignore need a role first.")
+        lines.append(t("describe.not_shown", names=", ".join(off)))
 
     # Textures and symbols.
     textured = [f"{_name(cfg, c)}: {cfg.texture(c).describe()}" for c in sorted(shown) if cfg.texture(c)]
     if not f.textures:
-        lines.append("Textures: off (features.textures); every area is smooth.")
+        lines.append(t("describe.textures_off"))
     elif textured:
-        lines.append("Textures (features.textures, class.NAME.texture): " + "; ".join(textured) + ".")
+        lines.append(t("describe.textures", list="; ".join(textured)))
     counts = Counter(c.cls for c in items if c.role == "object")
-    standard = [f"{_name(cfg, c)} as a {cfg.classes[c].size_mm:g} mm {cfg.shape(c)} ({counts[c]} on the map)"
+    standard = [t("describe.standard_item", name=_name(cfg, c), size=num(cfg.classes[c].size_mm),
+                  shape=t(f"shape.{cfg.shape(c)}"), count=counts[c])
                 for c in sorted(shown) if cfg.shape(c)]
     if standard:
-        lines.append("Point symbols drawn as standard tactile symbols (features.standard_symbols, "
-                     "class.NAME.shape): " + "; ".join(standard) + ".")
+        lines.append(t("describe.standard", list="; ".join(standard)))
     elif not f.standard_symbols:
-        lines.append("Point symbols: as drawn on the map (features.standard_symbols is off).")
+        lines.append(t("describe.as_drawn_points"))
 
     # Line objects and smoothing.
     drawn = [c for c in sorted(shown) if cfg.classes[c].role == "object" and not cfg.shape(c)]
     if drawn:
-        widths = "; ".join(f"{_name(cfg, c)} at least {cfg.classes[c].min_width_mm:g} mm" for c in drawn)
-        how = f"widened to their class min_width_mm ({widths})" if gen.widen_objects else \
-              "at the width drawn on the map (generalize.widen_objects is off)"
-        lines.append(f"Lines are redrawn along their centre line, {how}, with {sm.line_cap} ends and "
-                     f"{sm.line_join} corners (smoothing.line_cap, smoothing.line_join).")
-    lines.append(f"Curves are read from the PDF with {sm.curve_step_mm:g} mm steps (smoothing.curve_step_mm); "
-                 f"rounded shapes use {sm.arc_segments} segments per quarter circle (smoothing.arc_segments).")
-    lines.append("Outlines: " + (f"simplified, detail under {sm.simplify_mm:g} mm removed" if sm.simplify_mm
-                                 else "exact, as on the map") + " (smoothing.simplify_mm); corners: "
-                 + (f"rounded with radius {sm.round_corners_mm:g} mm" if sm.round_corners_mm else "as drawn")
-                 + " (smoothing.round_corners_mm).")
+        widths = "; ".join(t("describe.width_item", name=_name(cfg, c), width=num(cfg.classes[c].min_width_mm))
+                           for c in drawn)
+        how = t("describe.widened", widths=widths) if gen.widen_objects else t("describe.not_widened")
+        lines.append(t("describe.lines", how=how, cap=sm.line_cap, join=sm.line_join))
+    lines.append(t("describe.curves", step=num(sm.curve_step_mm), segments=sm.arc_segments))
+    outline = t("describe.simplified", mm=num(sm.simplify_mm)) if sm.simplify_mm else t("describe.exact")
+    corners = t("describe.rounded", mm=num(sm.round_corners_mm)) if sm.round_corners_mm else t("describe.as_drawn")
+    lines.append(t("describe.outlines", outline=outline, corners=corners))
 
     # Generalisation, with what it did on this map.
-    g = t.generalized or {}
+    g = tm.generalized or {}
     steps = []
     if gen.clean_slivers:
-        steps.append(f"{g.get('slivers_moved', 0)} strips narrower than {gen.sliver_mm:g} mm given to the area "
-                     "next to them (clean_slivers)")
+        steps.append(t("describe.slivers", n=g.get("slivers_moved", 0), mm=num(gen.sliver_mm)))
     if gen.open_passages:
-        steps.append(f"{g.get('passages_opened', 0)} passages widened to {cfg.tactile.min_gap_mm:g} mm (open_passages)")
+        steps.append(t("describe.passages", n=g.get("passages_opened", 0), mm=num(cfg.tactile.min_gap_mm)))
     if gen.widen_thin:
-        steps.append(f"{g.get('thin_parts_widened', 0)} raised parts widened to {cfg.tactile.min_feature_mm:g} mm "
-                     "(widen_thin)")
+        steps.append(t("describe.widen_thin", n=g.get("thin_parts_widened", 0), mm=num(cfg.tactile.min_feature_mm)))
     if gen.merge_close_objects:
-        merges = ", ".join(f"{_name(cfg, c)} {n}" for c, n in sorted(g.get("objects_merged", {}).items())) or "none"
-        steps.append(f"objects closer than {gen.merge_gap_mm:g} mm merged, which also rounds their inside "
-                     f"corners (merge_close_objects; merges: {merges})")
+        merges = ", ".join(f"{_name(cfg, c)} {n}" for c, n in sorted(g.get("objects_merged", {}).items()))
+        steps.append(t("describe.merges", mm=num(gen.merge_gap_mm), merges=merges or t("describe.none")))
     if g.get("corners_rounded"):
-        steps.append(f"{g['corners_rounded']} corners rounded")
-    steps.append(f"pieces smaller than {gen.min_area_mm2:g} square mm dropped (min_area_mm2)")
-    lines.append("Generalisation ([generalize]): " + "; ".join(steps) + ".")
+        steps.append(t("describe.corners_rounded", n=g["corners_rounded"]))
+    steps.append(t("describe.min_area", mm2=num(gen.min_area_mm2)))
+    lines.append(t("describe.generalisation", steps="; ".join(steps)))
     return lines
 
 
-def position_lines(t: TactileModel, geo_check: list[str]) -> list[str]:
+def position_lines(tm: TactileModel, geo_check: list[str]) -> list[str]:
     """Where the position points are, on the plate and on Earth."""
     lines = []
-    for p in t.positions:
-        pins = "one tall pin" if p["pins"] == 1 else f"{p['pins']} tall pins side by side"
-        lines.append(f"Point {p['point']} ({pins}, {p['x_mm']:g} mm from the left and {p['y_mm']:g} mm from the "
-                     f"bottom of the plate): {p['text']} (latitude, longitude in decimal degrees, WGS 84). "
-                     f"On a web map: https://www.openstreetmap.org/?mlat={p['lat']:.6f}&mlon={p['lon']:.6f}&zoom=18")
+    for p in tm.positions:
+        pins = t("describe.one_pin") if p["pins"] == 1 else t("describe.n_pins", n=p["pins"])
+        url = f"https://www.openstreetmap.org/?mlat={p['lat']:.6f}&mlon={p['lon']:.6f}&zoom=18"
+        lines.append(t("describe.point", point=p["point"], pins=pins, x=num(p["x_mm"]), y=num(p["y_mm"]), text=p["text"],
+                       url=url))
     if lines:
-        lines.append("The coordinates are also in Braille in the bottom margin, after the point number.")
+        lines.append(t("describe.coordinates_in_braille"))
+    if tm.qr:
+        lines.append(t("describe.qr", link=tm.qr["link"]))
     return lines + geo_check
 
 
-def relief_lines(relief, cfg: Config, t: TactileModel) -> list[str]:
+def relief_lines(relief, cfg: Config, tm: TactileModel) -> list[str]:
     """The slopes (relief.py) in words."""
     if relief is None:
         return []
-    if not t.relief:
-        return [f"Slopes are switched on, but not shown: {relief.note or 'every band is at the lowest level'}."]
-    top = max(dz for _, dz in t.relief)
-    return [
-        (f"The ground rises in steps of {cfg.relief.step_mm:g} mm, one at every contour line: {relief.levels} steps, "
-        f"up to {top:g} mm above the lowest ground (relief.step_mm). Everything on the ground rises with it."),
-        ("The lowest ground is where the water is (relief.low); going away from it, the ground rises at every "
-        f"contour, except where a slope tick on the map says it falls ({relief.ticks} ticks found). This is inferred "
-        "from the map, which does not print heights: check it on relief_levels.png (darker = higher)."),
-    ]
+    if not tm.relief:
+        return [t("relief.not_shown", note=relief.note or t("relief.flat"))]
+    top = max(dz for _, dz in tm.relief)
+    return [t("relief.steps", step=num(cfg.relief.step_mm), levels=relief.levels, top=num(top)),
+            t("relief.direction", ticks=relief.ticks)]
 
 
-def describe(t: TactileModel, cfg: Config, check: dict, source: str, files: list[str],
+def describe(tm: TactileModel, cfg: Config, check: dict, source: str, files: list[str],
              items: list[Classified] | None = None, size_lines: list[str] | None = None,
              geo_check: list[str] | None = None, relief=None) -> str:
-    enlarge = t.scale / PT_TO_MM  # model mm per PDF mm
+    enlarge = tm.scale / PT_TO_MM  # model mm per PDF mm
     lines = [
-        f"TACTILE MAP: {t.title or 'untitled'}",
+        t("describe.heading", title=tm.title or t("describe.untitled")),
         "",
-        f"Made from {source}.",
-        (f"Plate: {t.width_mm:.0f} mm wide and {t.height_mm:.0f} mm deep. "
-         f"Base {t.base_mm:g} mm thick; the highest point is {check['total_height_mm']:g} mm above the table."),
+        t("describe.made_from", source=source),
+        t("describe.plate", w=num(tm.width_mm, ".0f"), h=num(tm.height_mm, ".0f"), base=num(tm.base_mm),
+          top=num(check["total_height_mm"])),
     ]
     if cfg.map_scale:
-        ts = tactile_scale(cfg, t)
-        lines.append(f"Scale: 1:{ts:.0f} (the printed map is 1:{cfg.map_scale:g}, enlarged {enlarge:.2f} times); "
-                     f"1 cm on the model is {ts / 100:.0f} m on the ground.")
+        ts = tactile_scale(cfg, tm)
+        lines.append(t("describe.scale", scale=f"{ts:.0f}", map_scale=f"{cfg.map_scale:g}", enlarge=num(enlarge, ".2f"),
+                       metres=num(ts / 100, ".0f")))
     else:
-        lines.append(f"Scale: the model is {enlarge:.2f} times the size of the printed map.")
+        lines.append(t("describe.scale_unknown", enlarge=num(enlarge, ".2f")))
     if size_lines:
-        lines += ["", "SIZE"] + size_lines
+        lines += ["", t("describe.size_heading")] + size_lines
 
-    lines += ["", "HOW TO HOLD IT"]
-    hold = ["North is up."]
-    if any(lyr.role == "edge" for lyr in t.layers):
-        hold.append("The map has the shape of the chosen window; a low raised line runs along its edge, "
-                    "and outside it the plate is flat.")
-    if any(lyr.role == "north" for lyr in t.layers):
-        hold.append("North symbols are at the top-right and bottom-left corners; their ring end points north.")
-    if t.corner_mm:
-        hold.append("The top-right corner of the plate is cut off.")
-    if t.title:
-        hold.append(f'The Braille title "{t.title}" is at the top left.')
-    if t.scale_bar:
-        b = t.scale_bar
-        ticks = f", with a tick every {b['metres'] / b['divisions']:g} m" if b["divisions"] > 1 else ""
-        hold.append(f"{b['where'][0].upper()}{b['where'][1:]}, a raised scale bar measures {b['label']} on the ground "
-                    f"from one end tick to the other{ticks}; the distance is in Braille at its right.")
+    lines += ["", t("describe.hold_heading")]
+    hold = [t("describe.north_up")]
+    if any(lyr.role == "edge" for lyr in tm.layers):
+        hold.append(t("describe.edge"))
+    if any(lyr.role == "north" for lyr in tm.layers):
+        hold.append(t("describe.north_symbols"))
+    if tm.corner_mm:
+        hold.append(t("describe.corner"))
+    if tm.title:
+        hold.append(t("describe.title", title=tm.title))
+    if tm.scale_bar:
+        b = tm.scale_bar
+        where = t(f"bar.{b['where']}")
+        ticks = t("describe.bar_ticks", metres=num(b["metres"] / b["divisions"])) if b["divisions"] > 1 else ""
+        hold.append(t("describe.bar", where=where[0].upper() + where[1:], label=b["label"], ticks=ticks))
     elif cfg.features.scale_bar and not cfg.map_scale:
-        hold.append("There is no scale bar: the scale of the map is not known (give it with --map-scale).")
+        hold.append(t("describe.no_bar"))
     lines.append(" ".join(hold))
-    if t.positions:
-        lines += ["", "WHERE IT IS"] + position_lines(t, geo_check or [])
+    if tm.positions:
+        lines += ["", t("describe.where_heading")] + position_lines(tm, geo_check or [])
     if relief is not None:
-        lines += ["", "SLOPES"] + relief_lines(relief, cfg, t)
+        lines += ["", t("describe.slopes_heading")] + relief_lines(relief, cfg, tm)
 
-    lines += ["", "LEGEND (also printed as legend.stl)"]
-    classes = classes_in_model(t, cfg)
-    map_area = (t.map_box[2] - t.map_box[0]) * (t.map_box[3] - t.map_box[1])
-    areas = {lyr.cls: lyr.geom.area for lyr in t.tactile_layers()}
+    lines += ["", t("describe.legend_heading")]
+    classes = classes_in_model(tm, cfg)
+    map_area = (tm.map_box[2] - tm.map_box[0]) * (tm.map_box[3] - tm.map_box[1])
+    areas = {lyr.cls: lyr.geom.area for lyr in tm.tactile_layers()}
     for cls in classes:
-        label = cfg.classes[cls].legend_label
-        share = f" (about {100 * areas[cls] / map_area:.0f} % of the map)" if cfg.classes[cls].role == "terrain" else ""
-        lines.append(f"- {label}: {feel(cfg, cls)}{share}.")
+        share = t("describe.share", pct=num(100 * areas[cls] / map_area, ".0f")) if cfg.classes[cls].role == "terrain" else ""
+        lines.append(t("describe.legend_line", label=cfg.classes[cls].legend_label, feel=feel(cfg, cls), share=share))
 
     if items is not None:
-        lines += ["", "AUTOMATIC CHANGES (each one is a setting; see docs/SETTINGS.md)"]
-        lines += automatic_changes(cfg, t, items)
+        lines += ["", t("describe.changes_heading")]
+        lines += automatic_changes(cfg, tm, items)
 
-    lines += ["", "TACTILE CHECK"]
+    lines += ["", t("describe.check_heading")]
     if check["ok"]:
-        lines.append("All checks passed.")
+        lines.append(t("describe.all_passed"))
     lines += summary_lines(check)
     examples = [(k, check[k]["examples_mm"]) for k in ("thin_parts", "narrow_gaps", "narrow_passages", "hidden_objects")
                 if check[k]["count"]]
     if examples:
-        lines.append("Example places, in mm from the bottom-left corner of the plate (x to the right, y up):")
+        lines.append(t("describe.examples"))
         for k, pts in examples:
-            lines.append(f"- {k.replace('_', ' ')}: " + "; ".join(f"{x:g}, {y:g}" for x, y in pts))
+            lines.append(f"- {t(f'check.{k}')}: " + "; ".join(f"{num(x)}, {num(y)}" for x, y in pts))
     if not check["ok"]:
-        lines.append("To fix: build at a larger scale (--scale or --width), convert a smaller part (--crop), "
-                     "or change heights and textures (tuner.html).")
+        lines.append(t("describe.to_fix"))
 
-    lines += ["", "FILES"] + [f"- {f}" for f in files]
+    lines += ["", t("describe.files_heading")] + [f"- {f}" for f in files]
     return "\n".join(lines) + "\n"
 
 

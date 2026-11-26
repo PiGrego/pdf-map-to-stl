@@ -63,7 +63,7 @@ def test_polygon_map_fills_the_polygon_and_has_an_edge(polygon_build):
 def test_description_tells_the_map_has_the_window_shape(polygon_build):
     out, _ = polygon_build
     text = (out / "description.txt").read_text(encoding="utf-8")
-    assert "polygon window of 5 points" in text and "raised line runs along its edge" in text
+    assert "finestra a poligono di 5 punti" in text and "linea bassa in rilievo" in text
 
 
 def test_edge_line_can_be_switched_off(tmp_path):

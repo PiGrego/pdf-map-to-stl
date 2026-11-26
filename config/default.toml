@@ -21,7 +21,9 @@
 
 [output]
 width_mm = "auto"         # printed map width in mm; "auto" = the suggested size (see [size])
-base_mm = 2.0             # base plate thickness
+base_mm = 2.2             # base plate thickness (2.2 + buildings 2.4 = 4.6 mm in all)
+heights_include_texture = true  # a class height is the top of its texture (false: the texture stands on it)
+language = "it"           # Braille, legend, description.txt and messages: "it" (Italian) or "en" (English)
 top_skin_mm = 0.6         # parts export: each area owns this much of the plate under it
 north_height_mm = 1.0     # height of the north symbols
 window_edge_mm = 1.5      # polygon windows: width of the raised line along the map's edge
@@ -49,8 +51,15 @@ bed_mm = 256              # printer bed: a larger plate is flagged (print it in 
 # coordinates in Braille in the bottom margin, for the reader's navigation app.
 [position]
 pin_mm = 3.0              # pin diameter
-pin_height_mm = 4.0       # above the plate: higher than anything else
+pin_height_mm = 3.0       # above the plate: higher than anything else
 decimals = 5              # decimals of the degrees in Braille (5 = about 1 m)
+qr = true                 # a QR code of point 1 at the bottom right: a phone opens the place in a map app
+qr_link = "https://maps.google.com/?q={lat},{lon}"  # what the code holds ({lat}, {lon} in decimal degrees)
+qr_module_mm = 0.7        # side of one QR square
+qr_quiet_modules = 2      # flat border around the code, in squares (phone cameras need some)
+qr_height_mm = 0.6        # how high the dark squares stand (print the qr part dark, the plate light)
+qr_frame_mm = 1.0         # width of the raised frame around the code, to find it by touch
+qr_frame_height_mm = 1.0
 
 # ---------------------------------------------------------------- slopes (experimental)
 # Off by default. On: every band between two contour lines is raised step_mm above the
@@ -145,6 +154,7 @@ dot_height_mm = 0.6
 dot_spacing_mm = 2.5
 cell_spacing_mm = 6.0
 line_spacing_mm = 10.0
+dot_shape = "dome"        # "dome": rounded, no sharp tip when printed; "cone": a cut cone (the older shape)
 
 # ---------------------------------------------------------------- texture library
 # Raised patterns a class can use by name (texture = "dots"), or "none".
@@ -184,10 +194,13 @@ angle_deg = 0
 # enabled: false = not shown. A terrain class that is off gives its area to merge_into.
 # height_mm: top above the base plate (negative = recessed).
 # texture: a name from the texture library, "none", or an inline table.
+# profile (objects): "flat" (straight sides) or "dome" (rounded bump: trees, so they feel
+#   like trees, not columns).
 # shape (objects): "dot" | "ring" | "cross" draws every instance as that standard symbol
 #   of size_mm, whatever it looks like on the source map; "as_drawn" = as on the map,
 #   widened to min_width_mm.
-# label: Braille label in the legend (short; no accents).
+# label: Braille label in the legend (short), in each language: { it = "...", en = "..." },
+#   or one text for every language.
 # colour: [r, g, b] for previews, and the suggested filament colour of the part.
 
 [class.paved]                       # guidebook: paved area (smooth)
@@ -195,88 +208,89 @@ role = "terrain"
 colour = [245, 220, 196]
 height_mm = 0.0
 texture = "none"
-label = "paved"
+label = { it = "pavimentato", en = "paved" }
 [class.open_land]                   # guidebook: grass, open land (dots)
 role = "terrain"
 colour = [254, 191, 80]
-height_mm = 0.5
+height_mm = 0.6
 texture = "dots"
-label = "open land"
+label = { it = "prato", en = "open land" }
 [class.forest]                      # guidebook: forest (curls -> small rings)
 role = "terrain"
 colour = [255, 255, 255]
-height_mm = 1.0
+height_mm = 1.2
 texture = "rings"
-label = "forest"
+label = { it = "bosco", en = "forest" }
 [class.forbidden]                   # guidebook: forbidden area (hatching)
 role = "terrain"
 colour = [180, 179, 22]
-height_mm = 1.5
+height_mm = 1.8
 texture = "hatching"
-label = "forbidden"
+label = { it = "vietato", en = "forbidden" }
 [class.building]                    # guidebook: building (solid)
 role = "terrain"
 colour = [138, 140, 142]
-height_mm = 3.0
+height_mm = 2.4
 texture = "none"
-label = "building"
+label = { it = "edificio", en = "building" }
 [class.water]                       # guidebook: body of water (waves), recessed
 role = "terrain"
 colour = [0, 157, 221]
-height_mm = -0.8
+height_mm = -0.6
 texture = "waves"
-label = "water"
-[class.canopy]                      # ISSprOM 522 canopy (portici, galleries). Off: shown as paved,
-role = "terrain"                    # as in the guidebook. On: flat, with fine stripes.
-enabled = false
+label = { it = "acqua", en = "water" }
+[class.canopy]                      # ISSprOM 522 canopy (portici, galleries): 0.6 mm above the street,
+role = "terrain"                    # fine stripes (testers' choice; texture = "none" to use the slicer's Hilbert top).
+enabled = true
 merge_into = "paved"
 colour = [209, 211, 212]
-height_mm = 0.0
+height_mm = 0.6
 texture = "stripes"
-label = "canopy"
+label = { it = "portici", en = "canopy" }
 
 [class.barrier]                     # guidebook: uncrossable barrier (fence, wall)
 role = "object"
 colour = [35, 31, 32]
-height_mm = 3.5
+height_mm = 1.8
 min_width_mm = 1.0
 shape = "as_drawn"
-label = "barrier"
+label = { it = "muro", en = "barrier" }
 [class.tree]                        # guidebook: tree (dot)
 role = "object"
 colour = [45, 180, 87]
-height_mm = 2.5
+height_mm = 1.8
 min_width_mm = 1.0
 shape = "dot"
 size_mm = 2.5
 merge_gaps = false
-label = "tree"
+label = { it = "albero", en = "tree" }
+profile = "dome"
 [class.boulder]                     # guidebook: boulder (ring); no rule matches it yet
 role = "object"
 colour = [35, 31, 32]
-height_mm = 2.5
+height_mm = 1.8
 min_width_mm = 0.8
 shape = "ring"
 size_mm = 3.0
 merge_gaps = false
-label = "boulder"
+label = { it = "masso", en = "boulder" }
 [class.man_made_object]             # guidebook: man-made object (cross)
 role = "object"
 colour = [35, 31, 32]
-height_mm = 2.5
+height_mm = 1.8
 min_width_mm = 0.9
 shape = "cross"
 size_mm = 3.5
 merge_gaps = false
-label = "object"
+label = { it = "oggetto", en = "object" }
 [class.footpath]                    # ISSprOM 505 footpath (dashed). Off by default. On: a raised
 role = "object"                     # line; merge_close_objects joins its dashes.
 enabled = false
 colour = [35, 31, 32]
-height_mm = 2.0
+height_mm = 1.2
 min_width_mm = 1.0
 shape = "as_drawn"
-label = "path"
+label = { it = "sentiero", en = "path" }
 [class.contour]                     # ISOM 101 contour. Off by default. On: low ridges.
 role = "object"
 enabled = false
@@ -285,7 +299,7 @@ height_mm = 1.8
 min_width_mm = 0.8
 shape = "as_drawn"
 merge_gaps = false
-label = "contour"
+label = { it = "curva di livello", en = "contour" }
 
 # Not shown on the tactile map (no tactile use, or decoration of other symbols).
 [class.outline]

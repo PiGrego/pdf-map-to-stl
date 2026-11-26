@@ -26,7 +26,17 @@ from pathlib import Path
 from manifold3d import Manifold, OpType
 from shapely.ops import unary_union
 
-from .model3d import TactileModel, _cross_section, lift, recess_depth, recess_floors, write_stl
+from .i18n import num, t
+from .model3d import (
+    TactileModel,
+    _cross_section,
+    braille_dot,
+    lift,
+    object_solid,
+    recess_depth,
+    recess_floors,
+    write_stl,
+)
 
 
 @dataclass
@@ -51,41 +61,41 @@ def _column(geom, z0: float, z1: float) -> Manifold:
     return cs.extrude(z1 - z0).translate((0, 0, z0))
 
 
-def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None = None) -> list[Part]:
-    base_z = t.base_mm
+def build_parts(tm: TactileModel, top_skin_mm: float = 0.6, colours: dict | None = None) -> list[Part]:
+    base_z = tm.base_mm
     skin = max(0.2, min(top_skin_mm, base_z - 0.4))
     parts: list[Part] = []
     removed_from_base: list[Manifold] = []
     terrain_cols: list[Manifold] = []
 
-    for layer in (lyr for lyr in t.layers if lyr.role == "terrain"):
+    for layer in (lyr for lyr in tm.layers if lyr.role == "terrain"):
         if layer.height_mm >= 0:
             col = _column(layer.geom, base_z - skin, base_z + layer.height_mm)
             removed_from_base.append(col)
-            note = "flat top skin" if layer.height_mm == 0 else f"raised {layer.height_mm:g} mm"
+            note = t("parts.flat_skin") if layer.height_mm == 0 else t("parts.raised", height=num(layer.height_mm))
             top = base_z + layer.height_mm
         else:
             depth = recess_depth(layer.height_mm, base_z)
             floor = base_z - depth
             col = _column(layer.geom, max(0.2, floor - skin), floor)
             removed_from_base.append(_column(layer.geom, max(0.2, floor - skin), base_z + 1))
-            note, top = f"floor of a {depth:g} mm recess", floor
+            note, top = t("parts.recess_floor", depth=num(depth)), floor
         terrain_cols.append(col)
         parts.append(Part(layer.cls, "terrain", col, top, note))
 
-    base = _column(t.plate, 0.0, base_z)
+    base = _column(tm.plate, 0.0, base_z)
     cut = _union(removed_from_base)
     if cut is not None:
         base = base - cut
-    parts.insert(0, Part("base", "base", base, base_z, "plate under everything"))
+    parts.insert(0, Part("base", "base", base, base_z, t("parts.plate")))
 
     ground = _union(terrain_cols)
     placed: list[Manifold] = []
-    floors = recess_floors(t)
-    objects = sorted((lyr for lyr in t.layers if lyr.role in ("object", "pin")), key=lambda lyr: -lyr.height_mm)
+    floors = recess_floors(tm)
+    objects = sorted((lyr for lyr in tm.layers if lyr.role in ("object", "pin")), key=lambda lyr: -lyr.height_mm)
     for layer in objects:
         # Over a recess (water) an object stands on its floor, as in model.stl: no tunnel.
-        solid = _union([_column(layer.geom, base_z, base_z + layer.height_mm)]
+        solid = _union([object_solid(layer.geom, base_z, base_z + layer.height_mm, layer.profile)]
                        + [_column(layer.geom.intersection(g), floor, base_z) for g, floor in floors]) or Manifold()
         if ground is not None:
             solid = solid - ground
@@ -94,32 +104,31 @@ def build_parts(t: TactileModel, top_skin_mm: float = 0.6, colours: dict | None 
         if solid.is_empty() or solid.volume() < 1e-3:
             continue
         placed.append(solid)
-        note = f"{layer.height_mm:g} mm high" if layer.role == "object" else "position pins (point 1: one pin, point 2: two)"
+        note = t("parts.object", height=num(layer.height_mm)) if layer.role == "object" else t("parts.pins")
         parts.append(Part(layer.cls, layer.role, solid, base_z + layer.height_mm, note))
 
-    object_area = unary_union([lyr.geom for lyr in t.layers if lyr.role == "object"])
-    for layer in (lyr for lyr in t.layers if lyr.role == "texture"):
+    object_area = unary_union([lyr.geom for lyr in tm.layers if lyr.role == "object"])
+    for layer in (lyr for lyr in tm.layers if lyr.role == "texture"):
         geom = layer.geom.difference(object_area) if not object_area.is_empty else layer.geom
         solid = _column(geom, base_z + layer.z0_mm, base_z + layer.height_mm)
         if not solid.is_empty():
             parts.append(Part(layer.cls.replace(" ", "_"), "texture", solid, base_z + layer.height_mm,
-                              f"texture of {layer.on}"))
+                              t("parts.texture", cls=layer.on)))
 
-    notes = {"north": "north symbols (the ring end points north)", "frame": "frames around flat legend samples",
-             "edge": "raised line along the edge of the map window",
-             "scale_bar": f"scale bar: {t.scale_bar.get('label', '')} on the ground between its end ticks"}
-    for layer in (lyr for lyr in t.layers if lyr.role in notes):
+    notes = {"north": t("parts.north"), "frame": t("parts.frame"), "edge": t("parts.edge"),
+             "scale_bar": t("parts.scale_bar", label=tm.scale_bar.get("label", "")),
+             "qr": t("parts.qr"), "qr_frame": t("parts.qr_frame")}
+    for layer in (lyr for lyr in tm.layers if lyr.role in notes):
         parts.append(Part(layer.role, layer.role, _column(layer.geom, base_z, base_z + layer.height_mm),
                           base_z + layer.height_mm, notes[layer.role]))
 
-    if t.braille_dots:
-        spec = t.braille_spec
-        r = spec.dot_diameter_mm / 2
-        dots = [Manifold.cylinder(spec.dot_height_mm, r, r * 0.55, 16).translate((x, y, base_z)) for x, y in t.braille_dots]
-        parts.append(Part("braille", "braille", _union(dots), base_z + spec.dot_height_mm, "Braille dots"))
-    if t.relief:  # slopes: every part rises with its band; the plate fills the gap under them
+    if tm.braille_dots:
+        spec = tm.braille_spec
+        dots = [braille_dot(x, y, base_z, spec) for x, y in tm.braille_dots]
+        parts.append(Part("braille", "braille", _union(dots), base_z + spec.dot_height_mm, t("parts.braille")))
+    if tm.relief:  # slopes: every part rises with its band; the plate fills the gap under them
         for p in parts:
-            p.solid = lift(p.solid, t.relief, fill=p.kind == "base")
+            p.solid = lift(p.solid, tm.relief, fill=p.kind == "base")
             if not p.solid.is_empty():
                 p.z_top_mm = p.solid.bounding_box()[5]
     colours = colours or {}
@@ -146,28 +155,9 @@ def write_parts(parts: list[Part], folder: Path, title: str) -> list[dict]:
 
 
 def _readme(rows: list[dict], title: str) -> str:
-    lines = [
-        f"PARTS OF: {title}",
-        "",
-        "Each file is one layer of the same object. All files share one coordinate system",
-        "(millimetres, origin at the plate's bottom-left corner, z up from the table), and the",
-        "parts touch without overlapping. Loaded together as ONE object with several parts,",
-        "they line up exactly.",
-        "",
-        "HOW TO LOAD",
-        "- Bambu Studio, OrcaSlicer: import all files at once; when asked whether to load them",
-        "  as a single object with multiple parts, answer Yes.",
-        "- PrusaSlicer: import all files at once; it asks the same question when the printer",
-        "  profile has more than one extruder. Otherwise load 00_base.stl and add the others",
-        "  with right-click > Add part > Load, and check that they line up.",
-        "- Do not load them as separate objects: the slicer drops each one to the bed and moves it.",
-        "",
-        "Then give each part its own settings: filament or colour, fuzzy skin or ironing for",
-        "texture, and so on. model.stl is the same model as a single body, for one-material prints.",
-        "",
-        "PARTS (top = highest point above the table)",
-    ]
+    lines = [t("parts.heading", title=title), "", t("parts.intro"), "", t("parts.how"), "", t("parts.then"), "",
+             t("parts.list")]
     for r in rows:
-        colour = f" Suggested colour {r['colour']} (as on the map)." if r["colour"] else ""
-        lines.append(f"- {r['file']}: {r['kind']}, top {r['top_mm']:g} mm. {r['note']}.{colour}")
+        colour = t("parts.colour", colour=r["colour"]) if r["colour"] else ""
+        lines.append(t("parts.row", file=r["file"], kind=r["kind"], top=num(r["top_mm"]), note=r["note"], colour=colour))
     return "\n".join(lines) + "\n"

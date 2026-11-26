@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from . import i18n
 from .compose import build_map, classify
 from .config import Config, load_config, settings_dict, to_toml
 from .describe import describe, tactile_scale, write_description
@@ -38,18 +39,12 @@ from .validate import class_colours, validate
 Rect = tuple[float, float, float, float]
 MIN_PLATE_MAP_MM = 10.0  # a fixed plate (--plate) must leave at least this much height for the map
 
-OUTPUT_FILES = [
-    "model.stl: the tactile map to print, as one body.",
-    "parts/: the same map as one STL per layer, to load as one multi-part object in the slicer (see parts/README.txt).",
-    "legend.stl and legend_parts/: the tactile legend, as one body and per layer.",
-    "description.txt: this description, including every automatic change.",
-    "settings_used.toml: every setting this build used; build again with --settings settings_used.toml.",
-    "tuner.html: choose heights, textures and which features to show; saves settings.toml.",
-    "symbols.csv: every map symbol found and the class it became.",
-    "relief_preview.png and legend_preview.png: pictures of the models.",
-    "tactile_check.png: picture of the places the tactile check flags.",
-    "report.json: all numbers.",
-]
+OUTPUT_FILES = ("model", "parts", "legend", "description", "settings", "tuner", "symbols", "previews", "check", "report")
+
+
+def output_files() -> list[str]:
+    """The files a build writes, in words (the FILES list of description.txt)."""
+    return [i18n.t(f"pipeline.file_{f}") for f in OUTPUT_FILES]
 
 
 @dataclass
@@ -76,8 +71,9 @@ def describe_window(crop_mm) -> str:
     """The window in words, for the description."""
     v = [f"{x:g}" for x in crop_mm]
     if len(v) == 4:
-        return f"window {v[0]} to {v[2]} mm across and {v[1]} to {v[3]} mm down the page"
-    return f"polygon window of {len(v) // 2} points (mm from the page's top-left: {','.join(v)})"
+        return i18n.t("pipeline.window_rect", x0=i18n.num(crop_mm[0]), x1=i18n.num(crop_mm[2]),
+                      y0=i18n.num(crop_mm[1]), y1=i18n.num(crop_mm[3]))
+    return i18n.t("pipeline.window_polygon", n=len(v) // 2, points=",".join(v))
 
 
 def resolve_title(option: str | None, config_title: str, pdf: Path) -> str:
@@ -166,10 +162,9 @@ def _write_model(t: TactileModel, out: Path, name: str, parts_dir: str, cfg: Con
 
 
 def write_settings(cfg: Config, path: Path, pdf_name: str) -> None:
-    header = (f"Every setting used to build {pdf_name}, from (in this order):\n"
+    header = (i18n.t("pipeline.settings_header", pdf=pdf_name) + "\n"
               + "\n".join(f"  {s}" for s in cfg.sources)
-              + "\nBuild the same model again with: --settings settings_used.toml\n"
-              "Symbol rules are not included: they stay in the config file.")
+              + "\n" + i18n.t("pipeline.settings_again") + "\n" + i18n.t("pipeline.settings_rules"))
     path.write_text(to_toml(settings_dict(cfg), header), encoding="utf-8")
 
 
@@ -208,25 +203,23 @@ def input_warnings(validation: dict, cfg: Config, stls: list[dict], inventory: l
     only by their nearest colour, symbol sizes that differ from the rules."""
     out = []
     nearest = [r for r in inventory if "[nearest colour" in r["isom"]]
+    def pct(x: float, spec: str) -> str:
+        return format(x, spec).replace(".", i18n.t("number.decimal_mark"))
+
     if nearest:
-        out.append(f"{len(nearest)} kinds of map symbol were recognised by the nearest rule colour, not an exact one "
-                   "(recognition.colour_match_de). Check the rows marked [nearest colour] in symbols.csv.")
+        out.append(i18n.t("pipeline.warn_nearest_one") if len(nearest) == 1 else i18n.t("pipeline.warn_nearest", n=len(nearest)))
     if cfg.size_scale_used != 1.0:
-        out.append(f"the symbols in this PDF are {cfg.size_scale_used:g} times the size the rules expect "
-                   f"({cfg.size_scale_note}); the rules were scaled to match (recognition.size_scale).")
+        out.append(i18n.t("pipeline.warn_size_scale", factor=i18n.num(cfg.size_scale_used), note=cfg.size_scale_note))
     v = validation.get("metrics") if validation else None
     if v and v["accuracy"] < cfg.validate.min_agreement:
-        out.append(f"the model agrees with the PDF on only {v['accuracy']:.1%} of the checked area "
-                   f"(validate.min_agreement is {cfg.validate.min_agreement:.0%}). Look at validation_errors.png; "
-                   "an unusual PDF (for example a rotated or re-exported page) can cause this.")
+        out.append(i18n.t("pipeline.warn_agreement", pct=pct(v["accuracy"], ".1%"),
+                          min=pct(cfg.validate.min_agreement, ".0%")))
     share = v.get("checked_share_of_window") if v else None
     if share is not None and share < cfg.validate.min_checked_share:
-        out.append(f"only {share:.0%} of the window could be compared with the PDF "
-                   f"(validate.min_checked_share is {cfg.validate.min_checked_share:.0%}): its colours are not in the "
-                   "symbol rules, or it is not a vector map. Check symbols.csv.")
+        out.append(i18n.t("pipeline.warn_checked", pct=pct(share, ".0%"), min=pct(cfg.validate.min_checked_share, ".0%")))
     for s in stls:
         if s.get("open_edges"):
-            out.append(f"an STL file has {s['open_edges']} open edges; the slicer may need to repair it.")
+            out.append(i18n.t("pipeline.warn_open_edges", n=s["open_edges"]))
     return out
 
 
@@ -253,9 +246,8 @@ def build(o: BuildOptions) -> dict:
     size_lines = describe_size(suggestion, cfg, cfg.width_mm, size_source)
     if o.plate_mm:
         x0, y0, x1, y1 = o.crop_mm
-        size_lines.append(f"The plate is fixed at {o.plate_mm[0]:g} by {o.plate_mm[1]:g} mm (--plate). At 1:{o.scale:g} "
-                          f"it shows {x1 - x0:.1f} by {y1 - y0:.1f} mm of the map page, centred where the window was "
-                          "picked; the rest of the plate holds the Braille title and the north symbols.")
+        size_lines.append(i18n.t("size.plate_fixed", w=i18n.num(o.plate_mm[0]), h=i18n.num(o.plate_mm[1]),
+                                 scale=f"{o.scale:g}", ww=i18n.num(x1 - x0, ".1f"), wh=i18n.num(y1 - y0, ".1f")))
     write_settings(cfg, o.out / "settings_used.toml", o.pdf.name)
 
     # 5. Tactile model and legend at print scale; one body and one part per layer each.
@@ -275,8 +267,9 @@ def build(o: BuildOptions) -> dict:
 
     # 7. Things to read and look at.
     colours = class_colours(cfg, m.background_class)
-    source = f"{o.pdf.name}, page {o.page + 1}" + (f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
-    write_description(describe(t, cfg, check.summary, source, OUTPUT_FILES, m.items, size_lines,
+    source = i18n.t("pipeline.source", pdf=o.pdf.name, page=o.page + 1) + (
+        f", {describe_window(o.crop_mm)}" if o.crop_mm else "")
+    write_description(describe(t, cfg, check.summary, source, output_files(), m.items, size_lines,
                                check_points(list(o.geo), cfg.map_scale), relief), o.out / "description.txt")
     if t.relief:
         terraces_image(t, colours).save(o.out / "relief_levels.png")
@@ -317,6 +310,7 @@ def build(o: BuildOptions) -> dict:
                  "lines": size_lines},
         "positions": t.positions,
         "scale_bar": t.scale_bar,
+        "qr": t.qr,
         "relief": None if relief is None else {
             "levels": relief.levels, "lines": relief.lines, "ticks": relief.ticks, "note": relief.note,
             "lift_mm": [round(dz, 3) for _, dz in t.relief]},
@@ -371,9 +365,8 @@ def build_legend_sample(o: LegendOptions) -> dict:
     legend = build_legend(classes, cfg, o.title)
     stl, parts = _write_model(legend, o.out, "legend", "parts", cfg)
     (o.out / "legend.txt").write_text(
-        legend_text(classes, cfg, legend, sources) + f"\nMade from {o.pdf.name}.\n"
-        "Files: legend.stl (one body), parts/ (one STL per layer, see parts/README.txt), legend_preview.png, "
-        "settings_used.toml.\n",
+        legend_text(classes, cfg, legend, sources) + "\n" + i18n.t("legend_sample.made_from", pdf=o.pdf.name) + "\n"
+        + i18n.t("legend_sample.files") + "\n",
         encoding="utf-8",
     )
     relief_image(legend, class_colours(cfg, "forest")).save(o.out / "legend_preview.png")

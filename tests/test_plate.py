@@ -25,11 +25,11 @@ def test_the_plate_comes_out_at_its_size_centred_on_the_picked_window(tmp_path):
     assert x1 - x0 == pytest.approx(120 / 2, abs=0.002)  # 1:5000 printed at 1:2500: twice the size
     assert ((x0 + x1) / 2, (y0 + y1) / 2) == pytest.approx(((CROP_MM[0] + CROP_MM[2]) / 2, (CROP_MM[1] + CROP_MM[3]) / 2),
                                                            abs=0.002)
-    assert r["size"]["source"] == "--plate" and "fixed at 120 by 100 mm" in " ".join(r["size"]["lines"])
+    assert r["size"]["source"] == "--plate" and "fissata a 120 per 100 mm" in " ".join(r["size"]["lines"])
     # The scale bar under the title: 100 m is 40 mm at 1:2500, with a tick every 20 m.
     assert r["scale_bar"] == {"metres": 100, "length_mm": 40.0, "divisions": 5, "label": "100 m",
-                              "where": "beside the bottom-left north symbol"}  # the title takes three lines
-    assert "scale bar measures 100 m" in (tmp_path / "description.txt").read_text(encoding="utf-8")
+                              "where": "bottom_left"}  # the title takes three lines
+    assert "barra in rilievo misura 100 m" in (tmp_path / "description.txt").read_text(encoding="utf-8")
     assert list((tmp_path / "parts").glob("*_scale_bar.stl"))  # its own part, for a colour of its own
 
 

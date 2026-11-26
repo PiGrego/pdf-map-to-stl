@@ -32,7 +32,15 @@ class GeoPoint:
     lon: float  # decimal degrees, east positive
 
     def text(self, decimals: int = 5) -> str:
-        return f"{self.lat:.{decimals}f}, {self.lon:.{decimals}f}"
+        """The coordinates as the build's language writes them (locales: position.format),
+        e.g. "44.51234, 11.34567" in English, "44,51234 N 11,34567 E" in Italian."""
+        from .i18n import num, t
+
+        spec = f".{decimals}f"
+        return t("position.format", lat=num(self.lat, spec), lon=num(self.lon, spec),
+                 lat_abs=num(abs(self.lat), spec), lon_abs=num(abs(self.lon), spec),
+                 ns=t("position.north") if self.lat >= 0 else t("position.south"),
+                 ew=t("position.east") if self.lon >= 0 else t("position.west"))
 
 
 def parse_coordinate(text: str, axis: str) -> float:
@@ -87,6 +95,20 @@ def ground_distance_m(a: GeoPoint, b: GeoPoint) -> float:
     return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(h))
 
 
+def qr_link(point: GeoPoint, template: str, decimals: int = 5) -> str:
+    """The text of the QR code of a position point: ``template`` with its coordinates."""
+    return template.format(lat=f"{point.lat:.{decimals}f}", lon=f"{point.lon:.{decimals}f}")
+
+
+def qr_matrix(text: str) -> list[list[int]]:
+    """The dark (1) and light (0) squares of a QR code holding ``text``, without border.
+    The error correction is at least M (15 % of the code can be damaged); higher when it
+    fits in the same size."""
+    import segno
+
+    return [list(row) for row in segno.make(text, error="m", micro=False).matrix]
+
+
 def check_points(points: list[GeoPoint], map_scale: float) -> list[str]:
     """Sentences for the description; with two points and a known map scale, a check that
     the coordinates agree with the map (a typing mistake would show here)."""
@@ -95,11 +117,13 @@ def check_points(points: list[GeoPoint], map_scale: float) -> list[str]:
     a, b = points
     on_map_m = math.hypot(a.x_mm - b.x_mm, a.y_mm - b.y_mm) / 1000 * map_scale
     ground = ground_distance_m(a, b)
+    from .i18n import t
+
     if ground <= 0:
-        return ["The two points have the same coordinates: check them."]
+        return [t("position.same_point")]
     diff = 100 * abs(on_map_m - ground) / ground
-    line = (f"Check: the two points are {ground:.0f} m apart by their coordinates and {on_map_m:.0f} m on the map "
-            f"at 1:{map_scale:g} ({diff:.0f} % difference).")
+    line = t("position.check", ground=f"{ground:.0f}", on_map=f"{on_map_m:.0f}", scale=f"{map_scale:g}",
+             diff=f"{diff:.0f}")
     if diff > 5:
-        line += " That is more than 5 %: check the coordinates and the points on the map."
+        line += t("position.check_more")
     return [line]

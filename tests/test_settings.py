@@ -79,11 +79,11 @@ def test_settings_used_builds_the_same_config(tmp_path):
 # ----------------------------------------------------------------------------- switches
 
 
-def test_canopy_is_paved_unless_switched_on():
-    cfg = load_config()
-    assert cfg.shown_as("canopy") == "paved" and cfg.role("canopy") == "ignore"
-    on = load_config(overrides=["class.canopy.enabled=true"])
+def test_canopy_is_shown_unless_switched_off():
+    on = load_config()  # the blind testers asked for the portici above the street
     assert on.shown_as("canopy") == "canopy" and on.role("canopy") == "terrain"
+    off = load_config(overrides=["class.canopy.enabled=false"])
+    assert off.shown_as("canopy") == "paved" and off.role("canopy") == "ignore"
     assert load_config().shown_as("footpath") is None  # an object switched off is not shown
 
 
@@ -93,8 +93,8 @@ def scene():
 
 
 def test_canopy_switch_moves_its_area_between_classes(scene):
-    off = build_map(scene, load_config())
-    on = build_map(scene, load_config(overrides=["class.canopy.enabled=true"]))
+    off = build_map(scene, load_config(overrides=["class.canopy.enabled=false"]))
+    on = build_map(scene, load_config())
     assert "canopy" not in off.terrain and on.terrain["canopy"].area > 0
     assert off.terrain["paved"].area == pytest.approx(on.terrain["paved"].area + on.terrain["canopy"].area, rel=1e-3)
     sources = {c.source for c in off.items if c.cls == "paved"}
@@ -102,7 +102,7 @@ def test_canopy_switch_moves_its_area_between_classes(scene):
 
 
 def test_tuner_offers_classes_that_are_switched_off(scene):
-    cfg = load_config()
+    cfg = load_config(overrides=["class.canopy.enabled=false"])
     cfg.width_mm = TEST_WIDTH_MM
     m = build_map(scene, cfg)
     t = build_layers(m, cfg, TILE)
@@ -173,7 +173,7 @@ def test_build_writes_settings_used_and_explains_its_changes(tmp_path):
     _tile(tmp_path, overrides=("smoothing.line_join=mitre",))
     used = tomllib.loads((tmp_path / "settings_used.toml").read_text(encoding="utf-8"))
     assert used["smoothing"]["line_join"] == "mitre"
-    assert used["class"]["canopy"]["enabled"] is False
+    assert used["class"]["canopy"]["enabled"] is True and used["output"]["language"] == "it"
     text = (tmp_path / "description.txt").read_text(encoding="utf-8")
-    assert "AUTOMATIC CHANGES" in text and "mitre corners" in text
+    assert "SCELTE AUTOMATICHE" in text and "angoli mitre" in text
     assert "--set smoothing.line_join=mitre" in text

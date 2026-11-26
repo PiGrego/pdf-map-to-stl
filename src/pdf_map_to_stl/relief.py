@@ -33,6 +33,7 @@ from shapely.geometry import LineString, Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
+from . import i18n
 from .compose import MapModel
 from .config import Config
 from .geometry import polygons
@@ -113,13 +114,13 @@ def find_relief(m: MapModel, cfg: Config) -> Relief:
     window = m.scene.area
     lines, ticks = _contours(m, cfg)
     if not lines:
-        return Relief(note="no contour lines in the window")
+        return Relief(note=i18n.t("relief.no_contours"))
     joins = _close_gaps(lines, window, r.close_gaps_mm * MM)
     edge = window.exterior if window.geom_type == "Polygon" else window.boundary
     bands = [b for b in polygonize(unary_union(lines + joins + [edge]))
              if b.area > MIN_BAND_MM2 * MM**2 and window.contains(b.representative_point())]
     if len(bands) < 2:
-        return Relief(lines=len(lines), ticks=len(ticks), note="the contour lines do not split the window into bands")
+        return Relief(lines=len(lines), ticks=len(ticks), note=i18n.t("relief.no_bands"))
 
     # Which bands meet along which contour line.
     tree = shapely.STRtree(bands)
@@ -150,7 +151,7 @@ def find_relief(m: MapModel, cfg: Config) -> Relief:
     seeds = [i for i, b in enumerate(bands) if not water.is_empty and b.intersects(water)]
     if not seeds:
         return Relief(lines=len(lines), ticks=len(ticks),
-                      note="no water in the window to tell low ground from high (relief.low = \"water\")")
+                      note=i18n.t("relief.no_water"))
     level = {i: 0 for i in seeds}
     queue = deque(seeds)
     while queue:

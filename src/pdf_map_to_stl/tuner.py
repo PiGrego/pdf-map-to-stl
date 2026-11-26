@@ -18,6 +18,7 @@ import json
 from importlib import resources
 from pathlib import Path
 
+from . import i18n
 from .config import Config
 from .geometry import polygons
 from .model3d import TactileModel
@@ -51,7 +52,7 @@ def _class_row(cls: str, cfg: Config, colours: dict, areas: dict) -> dict:
         "merge_label": cfg.classes[tc.merge_into].legend_label if tc.merge_into else "",
         "height_mm": tc.height_mm,
         "texture": texture,
-        "texture_text": tc.texture.describe() if tc.texture else "smooth",
+        "texture_text": tc.texture.describe() if tc.texture else i18n.t("tuner.smooth"),
         "shape": tc.shape or "as_drawn",
         "point_symbol": bool(tc.shape),
         "size_mm": tc.size_mm,
@@ -67,7 +68,7 @@ def tuner_data(t: TactileModel, colours: dict, pdf_name: str, cfg: Config, check
     for layer in t.layers:
         if layer.role == "texture":
             colour = _hex([c * 0.8 for c in colours.get(layer.on, (255, 255, 255))])
-        elif layer.role in ("braille", "north", "frame", "edge", "pin", "scale_bar"):
+        elif layer.role in ("braille", "north", "frame", "edge", "pin", "scale_bar", "qr", "qr_frame"):
             colour = "#282828"
         else:
             colour = _hex(colours.get(layer.cls, (255, 255, 255)))
@@ -84,7 +85,10 @@ def tuner_data(t: TactileModel, colours: dict, pdf_name: str, cfg: Config, check
     names = sorted(set(switchable) | set(areas))
     return {
         "pdf": pdf_name,
-        "config": ", then ".join(cfg.sources),
+        "config": i18n.t("describe.then").join(cfg.sources),
+        "lang": i18n.language(),
+        "text": {k.removeprefix("tuner."): v for k, v in i18n.catalogue(i18n.language()).items() if k.startswith("tuner.")},
+        "heights_include_texture": cfg.heights_include_texture,
         "command": command or f"pdf-map-to-stl build {pdf_name} --settings settings.toml",
         "width_mm": round(t.width_mm, 3),
         "height_mm": round(t.height_mm, 3),

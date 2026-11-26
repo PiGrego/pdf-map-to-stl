@@ -158,18 +158,17 @@ def _cross_class_passages(layers, terrain, narrow: dict, gap: float, step: float
 
 def summary_lines(s: dict) -> list[str]:
     """Plain-language lines (for the terminal and description.txt)."""
+    from .i18n import num, t
+
     r = s["rules"]
     out = [
-        f"Thin parts (narrower than {r['min_feature_mm']} mm): {s['thin_parts']['count']}",
-        f"Narrow gaps (closer than {r['min_gap_mm']} mm): {s['narrow_gaps']['count']}",
-        (f"Narrow passages between different raised features (narrower than {r['min_gap_mm']} mm): "
-         f"{s['narrow_passages']['count']}"),
-        (f"Neighbouring areas that feel the same (height step under {r['min_height_step_mm']} mm, same texture): "
-         f"{s['low_steps']['count']}"),
-        (f"Objects that barely rise above the ground (under {r['min_height_step_mm']} mm): "
-         f"{s['hidden_objects']['count']}"),
-        f"Small isolated areas (under {r['min_symbol_area_mm2']} square mm): {s['small_areas']['count']}",
+        t("check.thin", mm=num(r["min_feature_mm"]), n=s["thin_parts"]["count"]),
+        t("check.gaps", mm=num(r["min_gap_mm"]), n=s["narrow_gaps"]["count"]),
+        t("check.passages", mm=num(r["min_gap_mm"]), n=s["narrow_passages"]["count"]),
+        t("check.same", mm=num(r["min_height_step_mm"]), n=s["low_steps"]["count"]),
+        t("check.hidden", mm=num(r["min_height_step_mm"]), n=s["hidden_objects"]["count"]),
+        t("check.small", mm2=num(r["min_symbol_area_mm2"]), n=s["small_areas"]["count"]),
     ]
     for p in s["low_steps"]["pairs"]:
-        out.append(f"  - {p['a']} and {p['b']}: step {p['step_mm']} mm along {p['shared_edge_mm']} mm of edge")
+        out.append(t("check.pair", a=p["a"], b=p["b"], step=num(p["step_mm"]), edge=num(p["shared_edge_mm"])))
     return out
