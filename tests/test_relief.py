@@ -75,4 +75,4 @@ def test_relief_on_a_flat_map_says_why_it_is_not_shown(tmp_path):
                            validate=False, overrides=("relief.enabled=true",)))
     assert r["relief"]["levels"] == 0 and r["relief"]["note"]
     assert r["stl"]["genus"] == 0 and r["stl"]["open_edges"] == 0
-    assert "SLOPES" in (tmp_path / "description.txt").read_text(encoding="utf-8")
+    assert "PENDENZE" in (tmp_path / "description.txt").read_text(encoding="utf-8")

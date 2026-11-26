@@ -99,8 +99,17 @@ navigation app.
 | Setting | Default | What it does |
 |---|---|---|
 | `pin_mm` | `3.0` | pin diameter; point 1 is one pin, point 2 two pins side by side |
-| `pin_height_mm` | `4.0` | above the plate, higher than anything else on the map, so they are easy to find |
+| `pin_height_mm` | `3.0` | above the plate, higher than anything else on the map, so they are easy to find |
 | `decimals` | `5` | decimals of the degrees in Braille; 5 is about 1 m |
+| `qr` | `true` | a QR code of point 1 at the bottom right of the plate, in a raised frame with "qr" in Braille beside it: a phone camera opens the place in a map app |
+| `qr_link` | `"https://maps.google.com/?q={lat},{lon}"` | what the code holds; `{lat}` and `{lon}` are the point's decimal degrees |
+| `qr_module_mm` | `0.7` | side of one square of the code (33 × 33 squares: about 26 mm with its border) |
+| `qr_quiet_modules` | `2` | flat border around the code, in squares; phone cameras need some |
+| `qr_height_mm` | `0.6` | how high the dark squares stand; print the `qr` part dark and the plate light |
+| `qr_frame_mm`, `qr_frame_height_mm` | `1.0`, `1.0` | the raised frame around the code, to find it by touch; print it in the plate's light colour |
+
+The bottom margin grows to hold the code; with `--plate` the plate keeps its size and
+the map gets less height.
 
 ### `[relief]`: slopes as terraces (experimental, off by default)
 
@@ -163,31 +172,37 @@ the plate taller. It needs the map's scale (read from the page, or `--map-scale`
 | `enabled` | `false` = not on the model. A ground class that is off gives its area to `merge_into` (without one, what is painted under it on the map shows instead); an object class that is off is left out |
 | `merge_into` | the ground class that takes the area of this class when it is off |
 | `role` | `terrain` (areas that tile the map), `object` (on top) or `ignore` (never shown) |
-| `height_mm` | top above the base plate; negative = recessed into it |
+| `height_mm` | top above the base plate, including the texture on it (see `output.heights_include_texture`); negative = recessed into it |
 | `texture` | a name from the texture library, `"none"`, or an inline table |
 | `shape` | objects: `dot`, `ring` or `cross` draws every instance as that standard symbol of `size_mm`; `as_drawn` keeps the shape on the map |
+| `profile` | objects: `"flat"` (straight sides, flat top) or `"dome"` (a rounded bump: trees, so they do not feel like columns) |
 | `size_mm` | size of the standard symbol |
 | `min_width_mm` | objects: lines and small objects are widened to at least this (see `generalize.widen_objects`) |
 | `merge_gaps` | objects: `false` keeps close instances apart (trees) |
-| `label` | the Braille label on the legend (short, no accents) |
+| `label` | the Braille label on the legend, short: one per language, `{ it = "prato", en = "open land" }`, or one text for every language |
 | `colour` | `[r, g, b]` for previews and the suggested filament colour of the part |
 
 The default classes and how they feel:
 
 | Class | Default | Map symbols | On? |
 |---|---|---|---|
-| paved | flat, smooth | 501 paved area (two colours) | on |
-| open land | raised 0.5 mm, dots | 401, 402, 403, 412, 415 | on |
-| forest | raised 1 mm, small rings | 405 (white, and unpainted paper), 406, 408 | on |
-| forbidden | raised 1.5 mm, diagonal ridges | 520 out of bounds, 410 impassable vegetation | on |
-| building | raised 3 mm, smooth | 521 | on |
-| water | recessed 0.8 mm, wavy ridges | water | on |
-| **canopy** | off: shown as paved. On: flat, fine east-west stripes | 522 canopy (portici, galleries) | **off** |
-| barrier | 3.5 mm high, at least 1 mm wide | walls, fences, impassable hedges, black filled walls | on |
-| tree | 2.5 mm dot, 2.5 mm high | green dots and green rings | on |
-| man-made object | 3.5 mm cross, 2.5 mm high | the black × | on |
-| boulder | 3 mm ring | (no rule matches it yet) | on |
-| **footpath** | off. On: a raised line 2 mm high, its dashes joined | 505 footpath | **off** |
+Heights step by 0.6 mm, which blind testers found enough to feel, and include the
+texture on top (the plate is 2.2 mm, so the model is 4.6 mm in all).
+
+| Class | Default | Map symbols | On? |
+|---|---|---|---|
+| paved | flat, smooth | 501 paved area (three colours) | on |
+| open land | 0.6 mm with its dots | 401, 402, 403, 404, 412, 415 | on |
+| canopy | 0.6 mm with fine east-west stripes, above the street (testers' choice); `texture = "none"` to use the slicer's Hilbert top pattern on its part instead | 522 canopy (portici, galleries) | on |
+| forest | 1.2 mm with small rings | 405 (white, and unpainted paper), 406, 408 | on |
+| forbidden | 1.8 mm with diagonal ridges | 520 out of bounds, 410 impassable vegetation | on |
+| building | 2.4 mm, smooth | 521 | on |
+| water | 0.6 mm below the plate, wavy ridges | water | on |
+| barrier | 1.8 mm high (as trees), at least 1 mm wide | walls, fences, impassable hedges, black filled walls | on |
+| tree | 2.5 mm rounded bump (`profile = "dome"`), 1.8 mm high: lower than buildings | green dots and green rings | on |
+| man-made object | 3.5 mm cross, 1.8 mm high | the black × | on |
+| boulder | 3 mm ring, 1.8 mm high | (no rule matches it yet) | on |
+| **footpath** | off. On: a raised line 1.2 mm high, its dashes joined | 505 footpath | **off** |
 | **contour** | off. On: low ridges 1.8 mm high | 101 contour | **off** |
 
 Never shown (role `ignore`): thin black outlines of buildings and areas, dotted lines,
@@ -198,9 +213,8 @@ and a height in a copy of the config.
 Examples:
 
 ```
---set class.canopy.enabled=true                 canopy on, with its stripes
---set class.canopy.texture=none                 ...or smooth
---set class.canopy.height_mm=0.3                ...or slightly raised
+--set class.canopy.enabled=false                canopy off: shown as paved
+--set class.canopy.texture=none                 canopy smooth (texture it in the slicer)
 --set class.footpath.enabled=true               footpaths as raised lines
 --set class.tree.shape=ring                     trees as rings
 --set class.forest.texture=dots                 forest with the open-land dots
@@ -314,7 +328,9 @@ A low result means something is wrong with the input, not with the map.
 | Setting | Default | What it does |
 |---|---|---|
 | `width_mm` | `"auto"` | printed width of the map in mm; `"auto"` = the suggested size (`[size]`); `--width` and `--scale` override it |
-| `base_mm` | `2.0` | base plate thickness; recesses always leave 0.4 mm of plate |
+| `base_mm` | `2.2` | base plate thickness; recesses always leave 0.4 mm of plate (2.2 + buildings 2.4 = 4.6 mm) |
+| `heights_include_texture` | `true` | a class height is the top of its texture: open land at 0.6 mm is a surface at 0.1 mm with 0.5 mm dots on it; `false`: the texture stands on the area |
+| `language` | `"it"` | language of the Braille, the legend, `description.txt`, `legend.txt`, the pages and the messages: `"it"` (Italian) or `"en"` (English); `--lang` on the command line. Texts are in `src/pdf_map_to_stl/locales/` |
 | `top_skin_mm` | `0.6` | per-layer parts: each area owns this much of the plate under it |
 | `north_height_mm` | `1.0` | height of the north symbols |
 | `window_edge_mm`, `window_edge_height_mm` | `1.5`, `1.0` | width and height of the line along a polygon window's edge |
@@ -336,8 +352,10 @@ volumes touch along an edge (two areas meeting at one corner) they are moved up 
 ### `[braille]`: Braille size
 
 `dot_diameter_mm` 1.5, `dot_height_mm` 0.6, `dot_spacing_mm` 2.5, `cell_spacing_mm` 6,
-`line_spacing_mm` 10. Uncontracted Braille, never scaled with the map. Dots are
-rounded-off cones, easy to read and to print.
+`line_spacing_mm` 10, `dot_shape` `"dome"`. Uncontracted Braille, never scaled with the
+map, in the Braille code of the language (`output.language`): Italian Braille has its
+own cells for à è é ì ò ù and its question mark (dots 2-6). Dots are rounded domes, so
+the printed dot has no sharp tip (`dot_shape = "cone"`: the older cut cones).
 
 ### `[[symbol]]` rules
 

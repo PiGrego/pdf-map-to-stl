@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pymupdf
 
+from . import i18n
 from .config import load_config
 from .model3d import margins
 from .scene import PT_TO_MM, read_map_scale
@@ -29,7 +30,9 @@ def write_picker(pdf: Path, out_html: Path, page_number: int = 0) -> None:
         zoom = PREVIEW_LONG_SIDE_PX / max(r.width, r.height)
         png = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).tobytes("png")
         pages = len(doc)
+    lang = i18n.language()  # chosen by the caller (--lang); loading the config would reset it
     usual = margins(load_config(), 1000.0, "title", metres_per_mm=1.0)  # one line of title, north symbols, bar
+    i18n.set_language(lang)
     data = {
         "pdf": str(pdf),
         "page": page_number,
@@ -38,6 +41,9 @@ def write_picker(pdf: Path, out_html: Path, page_number: int = 0) -> None:
         "height_mm": round(r.height * PT_TO_MM, 2),
         "map_scale": read_map_scale(pdf, page_number) or None,  # for "Fixed size"; typed if not printed
         "margins_mm": [round(usual.top, 2), round(usual.bottom, 2)],
+        "lang": i18n.language(),  # the page's language; the command it writes asks for the chosen one (--lang)
+        "languages": {code: i18n.catalogue(code)["meta.name"] for code in i18n.languages()},
+        "text": {k.removeprefix("pick."): v for k, v in i18n.catalogue(i18n.language()).items() if k.startswith("pick.")},
         "image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
     }
     template = resources.files(__package__).joinpath("pick_template.html").read_text(encoding="utf-8")

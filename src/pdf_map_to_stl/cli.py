@@ -18,6 +18,8 @@ import argparse
 import re
 from pathlib import Path
 
+from . import i18n
+from .config import load_config
 from .geo import parse_geo
 from .pick import write_picker
 from .pipeline import BuildOptions, LegendOptions, build, build_legend_sample, suggest
@@ -81,10 +83,14 @@ def _settings_args(p: argparse.ArgumentParser) -> None:
                    help="change one setting, e.g. --set class.canopy.enabled=true or --set smoothing.line_join=mitre; "
                         "repeatable, applied last")
     p.add_argument("--no-textures", action="store_true", help="all areas smooth (same as --set features.textures=false)")
+    p.add_argument("--lang", choices=i18n.languages(),
+                   help="language of the Braille, the legend, description.txt and the messages "
+                        "(default: output.language, Italian)")
 
 
 def _overrides(a) -> tuple:
-    return tuple(a.overrides) + (("features.textures=false",) if a.no_textures else ())
+    return (tuple(a.overrides) + (("features.textures=false",) if a.no_textures else ())
+            + ((f"output.language={a.lang}",) if getattr(a, "lang", None) else ()))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -96,6 +102,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pdf", type=Path)
     p.add_argument("--page", type=int, default=0, help="page number, from 0")
     p.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>)")
+    p.add_argument("--lang", choices=i18n.languages(), help="language of the page (default: output.language)")
 
     b = sub.add_parser("build", help="convert the map (or a part of it) to STL")
     b.add_argument("pdf", type=Path)
@@ -137,14 +144,15 @@ def main(argv: list[str] | None = None) -> None:
     g.add_argument("--crop", type=_window, metavar="X0,Y0,X1,Y1[,...]",
                    help="only symbols in this window (rectangle or polygon, as for build)")
     _settings_args(g)
-    g.add_argument("--title", default="key", metavar="TEXT", help='Braille title of the legend (default "key")')
+    g.add_argument("--title", default=None, metavar="TEXT",
+                   help='Braille title of the legend (default the word "legend" in the language: "legenda")')
     g.add_argument("-o", "--out", type=Path, help="output folder (default outputs/<map name>/legend)")
 
     a = ap.parse_args(argv)
     try:
         _run(a)
     except ValueError as e:  # a wrong setting, crop or region: say what, without a traceback
-        ap.exit(1, f"Error: {e}\n")
+        ap.exit(1, i18n.t("cli.error", text=e) + "\n")
 
 
 def _run(a: argparse.Namespace) -> None:
@@ -154,60 +162,57 @@ def _run(a: argparse.Namespace) -> None:
         out = a.out or _default_out(a.pdf) / "legend"
         r = build_legend_sample(LegendOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.title,
                                               tuple(a.settings), _overrides(a)))
-        print(f"Legend written to {out / 'legend.stl'}: {r['size_mm'][0]:.0f} by {r['size_mm'][1]:.0f} mm, "
-              f"{len(r['classes'])} symbols: {', '.join(r['classes'])}.")
-        print(f"One STL per layer in {out / 'parts'} (see README.txt there).")
-        print(f"Text version in {out / 'legend.txt'}.")
+        print(i18n.t("cli.legend_plate", path=out / "legend.stl", w=f"{r['size_mm'][0]:.0f}", h=f"{r['size_mm'][1]:.0f}",
+                     n=len(r["classes"]), names=", ".join(r["classes"])))
+        print(i18n.t("cli.legend_parts", path=out / "parts"))
+        print(i18n.t("cli.legend_text", path=out / "legend.txt"))
         return
 
     if a.command == "size":
         _, lines = suggest(a.pdf, a.page, a.crop, a.config, tuple(a.settings), _overrides(a), a.map_scale)
         for line in lines:
             print(line)
-        print("Build at this size by leaving out --width and --scale.")
+        print(i18n.t("cli.size_hint"))
         return
 
     if a.command == "pick":
+        i18n.set_language(a.lang or load_config().language)
         write_picker(a.pdf, out / "pick.html", a.page)
-        print(f"Window picker written to {out / 'pick.html'}.")
-        print("Open it in a browser and draw the window: drag a rectangle, click the corners of a polygon,")
-        print("or place a plate of fixed size (Fixed size); or type it in millimetres. Then run the command it shows.")
+        print(i18n.t("cli.picker_written", path=out / "pick.html"))
+        print(i18n.t("cli.picker_open"))
         return
 
     r = build(BuildOptions(a.pdf, out, a.config, a.heights, a.page, a.crop, a.width, a.region,
                            a.title, a.map_scale, a.scale, not a.no_validate, tuple(a.settings), _overrides(a),
                            tuple(a.geo), a.plate))
     # Plain sentences, one per line: easy to follow with a screen reader.
+    tr, num = i18n.t, i18n.num
     m, c = r["model"], r["tactile_check"]
     for line in r["size"]["lines"]:
         print(line)
-    print(f"Model written to {out / 'model.stl'}: {m['width_mm']:.0f} by {m['height_mm']:.0f} mm, "
-          f"{c['total_height_mm']:g} mm high.")
+    print(tr("cli.model_written", path=out / "model.stl", w=num(m["width_mm"], ".0f"), h=num(m["height_mm"], ".0f"),
+             top=num(c["total_height_mm"])))
     for p in r["positions"]:
-        print(f"Position point {p['point']} ({p['pins']} pin{'s' if p['pins'] > 1 else ''}): {p['text']}.")
-    scale = f", scale 1:{m['tactile_scale']}" if m["tactile_scale"] else ""
-    print(f"One STL per layer in {out / 'parts'} ({len(r['parts'])} parts{scale}); see README.txt there.")
-    print(f"Legend written to {out / 'legend.stl'} and {out / 'legend_parts'}.")
-    print(f"Description written to {out / 'description.txt'}: how to hold the model, the legend, "
-          "every automatic change, and the checks.")
-    print(f"Settings used written to {out / 'settings_used.toml'}.")
-    problems = [f"{c[k]['count']} {k.replace('_', ' ')}" for k in ("thin_parts", "narrow_gaps", "narrow_passages", "low_steps",
-                                                                            "hidden_objects")
-                if c[k]["count"]]
-    if problems:
-        print(f"Tactile check: {', '.join(problems)}. Details in description.txt and tactile_check.png.")
-    else:
-        print("Tactile check: passed.")
-    print(f"Heights, textures and features can be tuned in {out / 'tuner.html'}.")
+        pins = tr("cli.one_pin") if p["pins"] == 1 else tr("cli.n_pins", n=p["pins"])
+        print(tr("cli.position", point=p["point"], pins=pins, text=p["text"]))
+    scale = tr("cli.parts_scale", scale=m["tactile_scale"]) if m["tactile_scale"] else ""
+    print(tr("cli.parts_written", path=out / "parts", n=len(r["parts"]), scale=scale))
+    print(tr("cli.legend_written", stl=out / "legend.stl", parts=out / "legend_parts"))
+    print(tr("cli.description_written", path=out / "description.txt"))
+    print(tr("cli.settings_written", path=out / "settings_used.toml"))
+    problems = [f"{c[k]['count']} {tr(f'check.{k}')}" for k in ("thin_parts", "narrow_gaps", "narrow_passages",
+                                                                 "low_steps", "hidden_objects") if c[k]["count"]]
+    print(tr("check.summary", problems=", ".join(problems)) if problems else tr("check.passed"))
+    print(tr("cli.tuner", path=out / "tuner.html"))
     if r["validation"]:
         v = r["validation"]["metrics"]
-        print(f"Agreement with the PDF: {v['accuracy']:.2%} of the checked area.")
+        print(tr("cli.agreement", pct=format(v["accuracy"], ".2%").replace(".", tr("number.decimal_mark"))))
     if r["unclassified"]:
-        print(f"Warning: {len(r['unclassified'])} kinds of map symbol were not recognised. "
-              f"Add rules for the rows marked unclassified in {out / 'symbols.csv'}.")
+        n = len(r["unclassified"])
+        print(tr("cli.unclassified_one", path=out / "symbols.csv") if n == 1 else tr("cli.unclassified", n=n, path=out / "symbols.csv"))
     for w in r.get("warnings", []):
-        print(f"Warning: {w}")
-    print(f"Done in {r['seconds']} seconds.")
+        print(tr("cli.warning", text=w))
+    print(tr("cli.done", seconds=num(r["seconds"])))
 
 
 if __name__ == "__main__":

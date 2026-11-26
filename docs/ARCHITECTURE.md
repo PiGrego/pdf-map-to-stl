@@ -89,6 +89,7 @@ arguments.
 | `validate.py` | pixel check against the PDF | `validate` |
 | `preview.py`, `report.py` | images, CSV, SVG, JSON | |
 | `tuner.py` + `tuner_template.html` | interactive tuner: heights, switches, textures, shapes | `write_tuner` |
+| `i18n.py` + `locales/*.toml` | languages: every text (Braille labels, description, pages, messages) per language; `braille.BRAILLE_CODES` holds each language's Braille cells | `t`, `num`, `set_language` |
 | `pick.py` + `pick_template.html` | interactive area picker: rectangle, polygon or fixed-size plate | `write_picker` |
 
 ## Key decisions

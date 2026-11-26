@@ -1,9 +1,11 @@
 """Uncontracted 6-dot Braille: text to dot positions in millimetres.
 
-Letters a-z, digits (number sign + a-j), space, and a few punctuation marks. Accented
-letters are reduced to their base letter, and capitals are written as lowercase (no
-capital sign), which keeps labels short. National Braille codes differ for accented
-letters; if a label needs them, write it without accents in the config.
+Letters a-z, digits (number sign + a-j), space, and a few punctuation marks, in the
+Braille code of the current language (``i18n``; ``BRAILLE_CODES``): Italian Braille has
+its own cells for the accented letters (a with grave accent: dots 12356, ...) and a
+different question mark (dots 26) from English. Other accented letters are reduced to
+their base letter, and capitals are written as lowercase (no capital sign), which
+keeps labels short. A mark a language's table does not have is left out.
 
 Cell layout (dot numbers)::
 
@@ -17,6 +19,8 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
+from . import i18n
+
 LETTERS = {
     "a": "1", "b": "12", "c": "14", "d": "145", "e": "15", "f": "124", "g": "1245",
     "h": "125", "i": "24", "j": "245", "k": "13", "l": "123", "m": "134", "n": "1345",
@@ -25,6 +29,18 @@ LETTERS = {
 }  # fmt: skip
 DIGITS = {str(d): LETTERS["jabcdefghi"[d]] for d in range(10)}
 PUNCTUATION = {",": "2", ";": "23", ":": "25", ".": "256", "!": "235", "?": "236", "-": "36", "'": "3", "/": "34"}
+# What each language's Braille code adds to the letters a-z and the digits: its accented
+# letters and its punctuation. Italian follows the Unione Italiana dei Ciechi e degli
+# Ipovedenti (see https://en.wikipedia.org/wiki/Italian_Braille); "/" is left out, as
+# its English cell (dots 34) is the Italian i with grave accent.
+BRAILLE_CODES = {
+    "en": {"accents": {}, "punctuation": PUNCTUATION},
+    "it": {
+        "accents": {"\u00e0": "12356", "\u00e8": "2346", "\u00e9": "123456", "\u00ec": "34", "\u00f2": "346",
+                    "\u00f3": "346", "\u00f9": "23456"},
+        "punctuation": {",": "2", ";": "23", ":": "25", ".": "256", "!": "235", "?": "26", "-": "36", "'": "3"},
+    },
+}
 NUMBER_SIGN = "3456"
 LETTER_SIGN = "56"  # after a number, before a letter a-j, so it is not read as a digit
 
@@ -43,19 +59,28 @@ class BrailleSpec:
     dot_spacing_mm: float = 2.5
     cell_spacing_mm: float = 6.0
     line_spacing_mm: float = 10.0
+    dot_shape: str = "dome"  # "dome": rounded, no sharp tip when printed; "cone": a cut cone
 
     @property
     def cell_height_mm(self) -> float:
         return 2 * self.dot_spacing_mm + self.dot_diameter_mm
 
 
-def to_cells(text: str) -> list[str]:
-    """Text -> list of cells, each a string of dot numbers ("" = blank cell)."""
-    plain = unicodedata.normalize("NFKD", text.lower())
-    plain = "".join(c for c in plain if not unicodedata.combining(c))
+def to_cells(text: str, code: str | None = None) -> list[str]:
+    """Text -> list of cells, each a string of dot numbers ("" = blank cell), in the
+    Braille code of language ``code`` (default: the current language)."""
+    table = BRAILLE_CODES.get(code or i18n.language(), BRAILLE_CODES["en"])
+    accents, punctuation = table["accents"], table["punctuation"]
+    plain = "".join(ch if ch in accents else
+                    "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+                    for ch in unicodedata.normalize("NFC", text.lower()))
     cells: list[str] = []
     in_number = False
     for ch in plain:
+        if ch in accents:
+            cells.append(accents[ch])
+            in_number = False
+            continue
         if ch.isdigit():
             if not in_number:
                 cells.append(NUMBER_SIGN)
@@ -66,8 +91,8 @@ def to_cells(text: str) -> list[str]:
             if in_number and ch in "abcdefghij":
                 cells.append(LETTER_SIGN)
             cells.append(LETTERS[ch])
-        elif ch in PUNCTUATION:
-            cells.append(PUNCTUATION[ch])
+        elif ch in punctuation:
+            cells.append(punctuation[ch])
             if ch in ".,":  # decimal point / thousands separator keep the number going
                 continue
         elif ch.isspace():

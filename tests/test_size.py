@@ -30,8 +30,10 @@ def _suggest(window, *overrides, map_scale=5000):
 def test_suggested_size_makes_most_details_readable(window):
     sg = _suggest(window)
     assert sg.share_ok >= 0.9 and not sg.limited
-    assert sg.tactile_scale == 900  # a round scale; the guidebook recommends 1:500 to 1:1000
-    assert sg.width_mm == pytest.approx(50.058 * 5000 / 900, rel=1e-3)
+    # A round scale; the guidebook recommends 1:500 to 1:1000. (1:900 with the canopy off:
+    # raised, the narrow strips of portici ask for a little more.)
+    assert sg.tactile_scale == 800
+    assert sg.width_mm == pytest.approx(50.058 * 5000 / 800, rel=1e-3)
 
 
 def test_without_a_map_scale_the_width_is_rounded_to_10_mm(window):
@@ -57,7 +59,7 @@ def test_a_larger_detail_share_asks_for_a_larger_map(window):
 def test_suggestion_offers_a_size_that_fits_the_printer_bed():
     _, lines = suggest(NAVILE, crop_mm=CROP_MM)
     text = " ".join(lines)
-    assert "scale 1:900" in text and "--scale 1000" in text  # 278 mm does not fit a 256 mm bed
+    assert "scala 1:800" in text and "--scale 1000" in text  # 313 mm does not fit a 256 mm bed
 
 
 def test_set_map_scale_order():
@@ -74,10 +76,10 @@ def test_build_uses_the_suggested_size_unless_told_otherwise(tmp_path):
     r = build(BuildOptions(NAVILE, tmp_path / "a", crop_mm=CROP_MM, region_mm=tile, validate=False))
     assert r["size"]["source"] == "suggested"
     assert r["size"]["used_width_mm"] == pytest.approx(r["size"]["width_mm"])
-    assert r["model"]["tactile_scale"] == 900
+    assert r["model"]["tactile_scale"] == 800
     used = tomllib.loads((tmp_path / "a" / "settings_used.toml").read_text(encoding="utf-8"))
     assert used["output"]["width_mm"] == pytest.approx(r["size"]["used_width_mm"], abs=1e-3)  # rebuilds the same
-    assert "SIZE" in (tmp_path / "a" / "description.txt").read_text(encoding="utf-8")
+    assert "DIMENSIONI" in (tmp_path / "a" / "description.txt").read_text(encoding="utf-8")
 
     r = build(BuildOptions(NAVILE, tmp_path / "b", crop_mm=CROP_MM, region_mm=tile, scale=1000, validate=False))
     assert r["size"]["source"] == "--scale" and r["model"]["tactile_scale"] == 1000

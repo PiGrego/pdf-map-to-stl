@@ -88,7 +88,7 @@ def test_build_writes_one_stl_per_layer(tmp_path):
     r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path, validate=False))
     files = sorted(p.name for p in (tmp_path / "parts").glob("*.stl"))
     assert files[0] == "00_base.stl" and len(files) == len(r["parts"]) >= 10
-    assert "Load" in (tmp_path / "parts" / "README.txt").read_text(encoding="utf-8")
+    assert "COME CARICARLE" in (tmp_path / "parts" / "README.txt").read_text(encoding="utf-8")
     assert (tmp_path / "legend_parts" / "README.txt").exists()
 
 
@@ -98,12 +98,12 @@ def test_legend_sample_lists_the_symbols_found(tmp_path):
     assert "boulder" not in r["classes"]  # not on this map
     assert r["legend_stl"]["genus"] == 0
     text = (tmp_path / "legend.txt").read_text(encoding="utf-8")
-    assert 'Braille "open land"' in text
+    assert 'Braille "prato"' in text
 
 
 def test_navile_legend_has_the_guidebook_symbols_of_that_map(tmp_path):
     r = build_legend_sample(LegendOptions(NAVILE, tmp_path, title="key navile"))
-    assert set(r["classes"]) == {"water", "paved", "open_land", "forest", "forbidden", "building",
+    assert set(r["classes"]) == {"water", "paved", "canopy", "open_land", "forest", "forbidden", "building",
                                  "man_made_object", "tree", "barrier"}
     assert r["size_mm"][1] <= load_config().legend_max_height_mm
 

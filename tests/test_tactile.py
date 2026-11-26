@@ -140,8 +140,8 @@ def test_model_has_north_symbols_and_braille_title(built):
 def test_description_tells_how_to_hold_the_model(built):
     out, _ = built
     text = (out / "description.txt").read_text(encoding="utf-8")
-    assert "North symbols are at the top-right and bottom-left corners" in text
-    assert "LEGEND" in text and "TACTILE CHECK" in text
+    assert "I simboli del nord sono negli angoli in alto a destra e in basso a sinistra" in text
+    assert "LEGENDA" in text and "CONTROLLO TATTILE" in text
 
 
 def test_generalisation_leaves_few_problems_on_the_sample(built):
@@ -150,8 +150,9 @@ def test_generalisation_leaves_few_problems_on_the_sample(built):
     assert c["low_steps"]["count"] == 0
     assert c["thin_parts"]["count"] < 60  # 164 before generalisation
     # Areas and barriers (what generalisation changes); trees are point symbols left
-    # unmerged on purpose, and at 120 mm (about 1:2100) rows of trees are too dense.
-    not_trees = sum(n for cls, n in c["narrow_gaps"]["by_class"].items() if cls != "tree")
+    # unmerged on purpose, and at 120 mm (about 1:2100) rows of trees are too dense, as
+    # are the narrow strips of portici (canopy).
+    not_trees = sum(n for cls, n in c["narrow_gaps"]["by_class"].items() if cls not in ("tree", "canopy"))
     assert not_trees < 15  # 72 before generalisation
 
 

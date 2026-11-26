@@ -7,8 +7,15 @@ def test_letters():
     assert to_cells("key") == ["13", "15", "13456"]
 
 
-def test_capitals_and_accents_are_plain_letters():
-    assert to_cells("Città") == to_cells("citta")
+def test_capitals_and_accents_are_plain_letters_in_english():
+    assert to_cells("Città", "en") == to_cells("citta", "en")
+
+
+def test_italian_braille_has_its_accented_letters_and_question_mark():
+    assert to_cells("città?", "it")[-2:] == ["12356", "26"]  # a with grave accent; the Italian question mark
+    assert to_cells("perché più", "it") == to_cells("perché più", "it") and "123456" in to_cells("perché", "it")
+    assert to_cells("?", "en") == ["236"]
+    assert to_cells("a/b", "it") == to_cells("ab", "it")  # no slash: its English cell is the Italian i grave
 
 
 def test_numbers_get_a_number_sign_and_letters_after_them_a_letter_sign():

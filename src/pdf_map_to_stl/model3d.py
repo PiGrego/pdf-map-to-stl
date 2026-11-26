@@ -36,11 +36,11 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
-from . import braille
+from . import braille, i18n
 from .compose import MapModel
 from .config import Config, Texture
 from .generalize import generalize
-from .geo import GeoPoint, pins
+from .geo import GeoPoint, pins, qr_link, qr_matrix
 from .geometry import polygons
 from .relief import Relief
 from .scene import PT_TO_MM
@@ -63,6 +63,7 @@ class Layer:
     geom: BaseGeometry  # model mm
     z0_mm: float = 0.0  # bottom above the base plate (textures sit on their class)
     on: str = ""  # for textures: the class they belong to
+    profile: str = "flat"  # objects: "flat" or "dome" (rounded, see object_solid)
 
 
 @dataclass
@@ -81,7 +82,8 @@ class TactileModel:
     generalized: dict = field(default_factory=dict)  # what generalize.py changed
     positions: list[dict] = field(default_factory=list)  # position points: where they are on the plate
     relief: list[tuple[BaseGeometry, float]] = field(default_factory=list)  # slopes: (area, lift in mm)
-    scale_bar: dict = field(default_factory=dict)  # the scale bar: metres, length_mm, divisions, label
+    scale_bar: dict = field(default_factory=dict)  # the scale bar: metres, length_mm, divisions, label, where
+    qr: dict = field(default_factory=dict)  # the QR code of position point 1: link, x_mm, y_mm, size_mm
 
     def tactile_layers(self) -> list[Layer]:
         """Terrain and object layers (the map's content, without textures and Braille)."""
@@ -165,6 +167,7 @@ class Margins:
     bar_where: str = ""  # "top": under the title; "bottom": beside the bottom-left north symbol
     bar_x: float = 0.0  # left edge of the bar's band
     bar_y: float = 0.0  # top edge of the band: down from the plate's top ("top"), up from its bottom ("bottom")
+    qr: dict | None = None  # the QR code of point 1, bottom right: link, matrix, x, block, side, label_x
 
 
 def margins(cfg: Config, w: float, title: str | None, geo: tuple[GeoPoint, ...] = (),
@@ -179,9 +182,22 @@ def margins(cfg: Config, w: float, title: str | None, geo: tuple[GeoPoint, ...] 
     room = w - 2 * EDGE_PAD_MM - (NORTH_W_MM + EDGE_PAD_MM if north else 0)
     lines = braille.wrap(title, _cells_that_fit(room, spec)) if title else []
     title_h = (len(lines) - 1) * spec.line_spacing_mm + spec.cell_height_mm if lines else 0.0
-    # Bottom margin: north symbol at the left, then the position points' coordinates.
+    # Bottom margin: north symbol at the left, then the position points' coordinates, and at
+    # the right the QR code of point 1 (in a raised frame, "qr" in Braille beside it).
     geo_x = EDGE_PAD_MM + (NORTH_W_MM + EDGE_PAD_MM if north else 0.0)
-    geo_cells = _cells_that_fit(w - geo_x - EDGE_PAD_MM, spec)
+    qr = None
+    if geo and region is None and cfg.position.qr:
+        pr = cfg.position
+        link = qr_link(geo[0], pr.qr_link, pr.decimals)
+        matrix = qr_matrix(link)
+        side = (len(matrix) + 2 * pr.qr_quiet_modules) * pr.qr_module_mm
+        block = side + 2 * pr.qr_frame_mm
+        label = i18n.t("position.qr_label")
+        label_w = braille.width_mm(label, spec)
+        x = w - EDGE_PAD_MM - block
+        qr = {"link": link, "matrix": matrix, "x": x, "block": block, "side": side, "label": label,
+              "label_x": x - BAR_GAP_MM - label_w, "room": block + 2 * BAR_GAP_MM + label_w}
+    geo_cells = _cells_that_fit(w - geo_x - EDGE_PAD_MM - (qr["room"] if qr else 0.0), spec)
     geo_lines = [] if region is not None else [
         line for i, p in enumerate(geo, 1) for line in braille.wrap(f"{i}: {p.text(cfg.position.decimals)}", geo_cells)
     ]
@@ -197,9 +213,10 @@ def margins(cfg: Config, w: float, title: str | None, geo: tuple[GeoPoint, ...] 
         where = "bottom" if north and not geo_lines and under_title > NORTH_H_MM else "top"
     left_h = under_title if where == "top" else title_h
     top = 2 * EDGE_PAD_MM + max(left_h, NORTH_H_MM if north else 0.0) if (lines or north or where) else 0.0
-    bottom = 2 * EDGE_PAD_MM + max(NORTH_H_MM if north else 0.0, geo_h) if (north or geo_lines) else 0.0
+    qr_h = qr["block"] if qr else 0.0
+    bottom = 2 * EDGE_PAD_MM + max(NORTH_H_MM if north else 0.0, geo_h, qr_h) if (north or geo_lines or qr) else 0.0
     bar_x, bar_y = (EDGE_PAD_MM, under_title - band_h + EDGE_PAD_MM) if where == "top" else (geo_x, bottom - EDGE_PAD_MM)
-    return Margins(top, bottom, north, lines, geo_lines, geo_x, bar, where, bar_x, bar_y)
+    return Margins(top, bottom, north, lines, geo_lines, geo_x, bar, where, bar_x, bar_y, qr)
 
 
 def build_layers(
@@ -265,10 +282,10 @@ def build_layers(
         pattern = cfg.texture(layer.cls)
         if pattern is not None:
             tex = texture_geometry(layer.geom, pattern)
-            if not tex.is_empty:
-                z0 = layer.height_mm if layer.height_mm >= 0 else -recess_depth(layer.height_mm, cfg.base_mm)
-                layers.append(Layer(f"{layer.cls} texture", "texture", z0 + pattern.height_mm, tex,
-                                    z0_mm=z0, on=layer.cls))
+            levels = None if tex.is_empty else texture_levels(layer.height_mm, pattern, cfg)
+            if levels is not None:
+                layer.height_mm, z0, top = levels
+                layers.append(Layer(f"{layer.cls} texture", "texture", top, tex, z0_mm=z0, on=layer.cls))
     if m.scene.is_polygon and cfg.features.window_edge:
         # A raised line just outside a polygon window, so the edge of the map can be felt
         # (outside it the plate is flat, like paved ground).
@@ -296,14 +313,28 @@ def build_layers(
             north_symbol(EDGE_PAD_MM + NORTH_W_MM / 2, bottom - EDGE_PAD_MM),
         ])
         layers.append(Layer("north", "north", cfg.north_height_mm, glyphs))
+    qr_info = {}
+    if mg.qr:
+        q, pr = mg.qr, cfg.position
+        y_top = bottom - EDGE_PAD_MM
+        outer = box(q["x"], y_top - q["block"], q["x"] + q["block"], y_top)
+        layers.append(Layer("qr frame", "qr_frame", pr.qr_frame_height_mm, outer.difference(outer.buffer(-pr.qr_frame_mm))))
+        m = pr.qr_module_mm
+        x0 = q["x"] + pr.qr_frame_mm + pr.qr_quiet_modules * m
+        y0 = y_top - pr.qr_frame_mm - pr.qr_quiet_modules * m
+        dark = [box(x0 + c * m, y0 - (r + 1) * m, x0 + (c + 1) * m, y0 - r * m)
+                for r, row in enumerate(q["matrix"]) for c, v in enumerate(row) if v]
+        layers.append(Layer("qr", "qr", pr.qr_height_mm, unary_union(dark)))
+        dots += braille.dot_centres(q["label"], spec, q["label_x"], y_top)
+        qr_info = {"link": q["link"], "size_mm": round(q["side"], 1), "x_mm": round(q["x"], 1),
+                   "y_mm": round(y_top - q["block"], 1), "modules": len(q["matrix"])}
     bar_info = {}
     if mg.bar:
         y_top = total_h - mg.bar_y if mg.bar_where == "top" else mg.bar_y
         shape, label_dots = scale_bar_shapes(mg.bar, cfg, mg.bar_x, y_top)
         layers.append(Layer("scale bar", "scale_bar", cfg.scale_bar.height_mm, shape))
         dots += label_dots
-        where = ("beside the bottom-left north symbol" if mg.bar_where == "bottom"
-                 else "under the title" if lines else "at the top left")
+        where = "bottom_left" if mg.bar_where == "bottom" else "under_title" if lines else "top_left"  # locales: bar.*
         bar_info = {"metres": mg.bar.metres, "length_mm": round(mg.bar.length_mm, 2), "divisions": mg.bar.divisions,
                     "label": mg.bar.label, "where": where}
     if dots:
@@ -324,7 +355,7 @@ def build_layers(
 
     return TactileModel(
         w, total_h, cfg.base_mm, scale, layers, plate, (0.0, bottom, w, bottom + h), dots, spec, " / ".join(lines), c,
-        report.as_dict(), positions, terraces, bar_info,
+        report.as_dict(), positions, terraces, bar_info, qr_info,
     )
 
 
@@ -342,6 +373,24 @@ def north_symbol(cx: float, y_top: float) -> BaseGeometry:
     return unary_union(dots + [ring, stem])
 
 
+def texture_levels(height_mm: float, pattern: Texture, cfg: Config) -> tuple[float, float, float] | None:
+    """(area height, texture bottom, texture top) of a class with a texture, in mm above
+    the plate. With ``output.heights_include_texture`` the class height is the top of the
+    texture: a raised area lies one texture height lower (never below the plate), a
+    recessed one is cut deeper. Otherwise the texture stands on the area. None when no
+    texture is left: a flat class whose height includes it."""
+    h, ph = height_mm, pattern.height_mm
+    if cfg.heights_include_texture:
+        ph = min(ph, h) if h >= 0 else ph
+        area = round(h - ph, 6)
+    else:
+        area = h
+    if ph <= 0:
+        return None
+    z0 = area if area >= 0 else -recess_depth(area, cfg.base_mm)
+    return area, z0, z0 + ph
+
+
 def recess_depth(height_mm: float, base_mm: float) -> float:
     """How deep a recessed class is actually cut (always leaving a floor)."""
     return min(-height_mm, base_mm - MIN_FLOOR_MM)
@@ -354,7 +403,8 @@ def _generalize(layers: list[Layer], cfg: Config):
     terrain, objects, report = generalize(terrain, heights, objects, cfg)
     # Generalising can leave hairline pieces; nothing that small can be printed or felt.
     out = [Layer(c, "terrain", heights[c], _drop_small(g, cfg.generalize.min_area_mm2)) for c, g in sorted(terrain.items())]
-    out += [Layer(c, "object", heights[c], _drop_small(g, cfg.generalize.min_area_mm2)) for c, g in sorted(objects.items())]
+    out += [Layer(c, "object", heights[c], _drop_small(g, cfg.generalize.min_area_mm2), profile=cfg.classes[c].profile)
+            for c, g in sorted(objects.items())]
     return [lyr for lyr in out if not lyr.geom.is_empty], report
 
 
@@ -479,11 +529,41 @@ def _cross_section(g: BaseGeometry) -> CrossSection:
     return CrossSection(contours, FillRule.EvenOdd) if contours else CrossSection()
 
 
+DOME_SEGMENTS = 24  # facets around a dome (Braille dots, trees)
+
+
+def dome(x: float, y: float, z: float, radius: float, height: float) -> Manifold:
+    """A rounded bump: half an ellipsoid ``radius`` wide at its foot and ``height`` tall,
+    standing on height ``z``. It starts slightly below ``z`` so it fuses with what is under
+    it. Printed, it has no sharp tip, unlike a cone."""
+    return (Manifold.sphere(1.0, DOME_SEGMENTS).scale((radius, radius, height + 0.05))
+            .translate((x, y, z - 0.05)).trim_by_plane((0, 0, 1), z - 0.05))
+
+
 def braille_dot(x: float, y: float, z: float, spec: braille.BrailleSpec) -> Manifold:
-    """One Braille dot standing on height ``z``: a rounded-off cone (frustum), comfortable
-    to read and easy to print. It starts slightly below ``z`` so it fuses with the plate."""
+    """One Braille dot standing on height ``z``: a dome (``braille.dot_shape = "dome"``, no
+    sharp tip when printed) or a cut cone ("cone"). It fuses with the plate under it."""
     r = spec.dot_diameter_mm / 2
+    if spec.dot_shape == "dome":
+        return dome(x, y, z, r, spec.dot_height_mm)
     return Manifold.cylinder(spec.dot_height_mm + 0.05, r, r * 0.55, 16).translate((x, y, z - 0.05))
+
+
+def object_solid(geom: BaseGeometry, z0: float, z1: float, profile: str = "flat") -> Manifold:
+    """An object from height ``z0`` up to ``z1``: straight sides and a flat top, or for
+    ``profile = "dome"`` a rounded bump on each piece (over its smallest enclosing circle,
+    cut to the piece where the map's edge cuts it)."""
+    cs = _cross_section(geom)
+    if cs.is_empty() or z1 <= z0:
+        return Manifold()
+    prism = cs.extrude(z1 - z0).translate((0, 0, z0))
+    if profile != "dome":
+        return prism
+    bumps = []
+    for piece in polygons(geom):
+        c = shapely.minimum_bounding_circle(piece).centroid
+        bumps.append(dome(c.x, c.y, z0, shapely.minimum_bounding_radius(piece), z1 - z0))
+    return Manifold.batch_boolean(bumps, OpType.Add) ^ prism if bumps else prism
 
 
 def build_solid(t: TactileModel) -> Manifold:
@@ -506,6 +586,8 @@ def build_solid(t: TactileModel) -> Manifold:
             overlap = 0.01  # fuse with the surface below
             on_top.append(cs.extrude(layer.height_mm - layer.z0_mm + overlap)
                           .translate((0, 0, t.base_mm + layer.z0_mm - overlap)))
+        elif layer.height_mm > 0 and layer.profile == "dome":
+            raised.append(object_solid(layer.geom, t.base_mm - 0.01, t.base_mm + layer.height_mm, "dome"))
         elif layer.height_mm > 0:
             raised.append(cs.extrude(layer.height_mm).translate((0, 0, t.base_mm)))
         elif layer.height_mm < 0:

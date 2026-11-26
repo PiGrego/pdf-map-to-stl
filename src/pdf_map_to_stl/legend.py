@@ -23,13 +23,14 @@ from shapely.ops import unary_union
 from . import braille
 from .compose import Classified
 from .config import Config
+from .i18n import num, t
 from .model3d import (
     EDGE_PAD_MM,
     Layer,
     TactileModel,
-    recess_depth,
     standard_symbol,
     texture_geometry,
+    texture_levels,
 )
 
 SWATCH_W_MM = 16.0
@@ -38,7 +39,7 @@ LABEL_GAP_MM = 6.0
 COLUMN_GAP_MM = 8.0
 FRAME_MM = 0.8  # width of the frame around flat samples
 FRAME_HEIGHT_MM = 0.6
-DEFAULT_TITLE = "key"
+DEFAULT_TITLE = None  # the word for "legend" in the build's language (locales: legend.title)
 
 
 def order_classes(classes, cfg: Config) -> list[str]:
@@ -77,7 +78,9 @@ def _sample(cls: str, cfg: Config, x0: float, cy: float):
     return box(x0, cy - width / 2, x0 + SWATCH_W_MM, cy + width / 2), None
 
 
-def build_legend(classes: list[str], cfg: Config, title: str = DEFAULT_TITLE) -> TactileModel:
+def build_legend(classes: list[str], cfg: Config, title: str | None = DEFAULT_TITLE) -> TactileModel:
+    if title is None:
+        title = t("legend.title")
     spec = cfg.braille
     labels = [cfg.classes[c].legend_label for c in classes]
     label_w = max([braille.width_mm(s, spec) for s in labels] + [0.0])
@@ -109,13 +112,15 @@ def build_legend(classes: list[str], cfg: Config, title: str = DEFAULT_TITLE) ->
     for cls in classes:
         tc = cfg.classes[cls]
         geom = unary_union(samples[cls])
-        layers.append(Layer(cls, tc.role, tc.height_mm, geom))
+        area = Layer(cls, tc.role, tc.height_mm, geom, profile=tc.profile)
+        layers.append(area)
         pattern = cfg.texture(cls)
         if pattern is not None:
             tex = texture_geometry(geom, pattern)
-            if not tex.is_empty:
-                z0 = tc.height_mm if tc.height_mm >= 0 else -recess_depth(tc.height_mm, cfg.base_mm)
-                layers.append(Layer(f"{cls} texture", "texture", z0 + pattern.height_mm, tex, z0_mm=z0, on=cls))
+            levels = None if tex.is_empty else texture_levels(tc.height_mm, pattern, cfg)
+            if levels is not None:
+                area.height_mm, z0, top = levels
+                layers.append(Layer(f"{cls} texture", "texture", top, tex, z0_mm=z0, on=cls))
     if frames:
         layers.append(Layer("frame", "frame", FRAME_HEIGHT_MM, unary_union(frames)))
     r = spec.dot_diameter_mm / 2
@@ -141,39 +146,37 @@ def feel(cfg: Config, cls: str) -> str:
     """How a class feels, in words."""
     tc = cfg.classes[cls]
     pattern = cfg.texture(cls)
-    tex = f", with {pattern.describe()}" if pattern else ", smooth"
+    tex = t("legend.with", pattern=pattern.describe()) if pattern else t("legend.smooth")
     if tc.role == "object":
         shape = cfg.shape(cls)
         if tc.shape and not shape:
-            return f"as drawn on the map, at least {tc.min_width_mm:g} mm wide, {tc.height_mm:g} mm high"
-        name = {"dot": "a round dot", "ring": "a small ring", "cross": "a cross"}.get(shape, "a ridge")
-        size = f" {tc.size_mm:g} mm across" if shape else f" at least {tc.min_width_mm:g} mm wide"
-        return f"{name}{size}, {tc.height_mm:g} mm high"
+            return t("legend.as_drawn", width=num(tc.min_width_mm), height=num(tc.height_mm))
+        kind = "dome" if shape == "dot" and tc.profile == "dome" else shape if shape in ("dot", "ring", "cross") else "ridge"
+        size = t("legend.across", size=num(tc.size_mm)) if shape else t("legend.min_wide", width=num(tc.min_width_mm))
+        return t("legend.object", name=t(f"legend.{kind}"), size=size, height=num(tc.height_mm))
     if tc.height_mm < 0:
-        return f"recessed {-tc.height_mm:g} mm{tex}"
+        return t("legend.recessed", depth=num(-tc.height_mm), texture=tex)
     if tc.height_mm == 0:
-        framed = " (framed on the legend)" if cfg.features.legend_frames else ""
-        return f"flat, at plate level{tex}{framed}"
-    return f"raised {tc.height_mm:g} mm{tex}"
+        framed = t("legend.framed") if cfg.features.legend_frames else ""
+        return t("legend.flat", texture=tex, framed=framed)
+    return t("legend.raised", height=num(tc.height_mm), texture=tex)
 
 
-def legend_text(classes: list[str], cfg: Config, t: TactileModel, sources: dict[str, set[str]] | None = None) -> str:
-    n_cols = _layout(len(classes), cfg, t.title)[2]
+def legend_text(classes: list[str], cfg: Config, tm: TactileModel, sources: dict[str, set[str]] | None = None) -> str:
+    n_cols = _layout(len(classes), cfg, tm.title)[2]
     lines = [
-        f"TACTILE LEGEND: {t.title or 'untitled'}",
+        t("legend.heading", title=tm.title or t("describe.untitled")),
         "",
-        f"Plate: {t.width_mm:.0f} mm wide and {t.height_mm:.0f} mm deep, base {t.base_mm:g} mm.",
-        "The Braille title is at the top left. Entries follow in reading order: "
-        + ("left to right, then the next row." if n_cols > 1 else "top to bottom.")
-        + " Each entry is a sample on the left and its name in Braille on the right.",
+        t("legend.plate", w=num(tm.width_mm, ".0f"), h=num(tm.height_mm, ".0f"), base=num(tm.base_mm)),
+        t("legend.reading", order=t("legend.order_rows") if n_cols > 1 else t("legend.order_column")),
         "",
-        "ENTRIES",
+        t("legend.entries"),
     ]
     for cls in classes:
         tc = cfg.classes[cls]
-        line = f'- {tc.legend_label} (Braille "{tc.legend_label}"): {feel(cfg, cls)}.'
+        line = t("legend.entry", label=tc.legend_label, feel=feel(cfg, cls))
         if sources and sources.get(cls):
-            line += " Map symbols: " + "; ".join(sorted(sources[cls])) + "."
+            line += t("legend.sources", list="; ".join(sorted(sources[cls])))
         lines.append(line)
     return "\n".join(lines) + "\n"
 

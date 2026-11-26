@@ -89,8 +89,8 @@ def test_scanned_page_is_refused(tmp_path):
 def test_low_agreement_gives_a_warning(tmp_path):
     r = build(BuildOptions(NAVILE, crop_mm=CROP_MM, width_mm=TEST_WIDTH_MM, out=tmp_path,
                            overrides=("validate.min_agreement=1.01", "validate.min_checked_share=0.99")))
-    assert any("agrees with the PDF" in w for w in r["warnings"])
-    assert any("could be compared" in w for w in r["warnings"])
+    assert any("coincide con il PDF" in w for w in r["warnings"])
+    assert any("si è potuto confrontare" in w for w in r["warnings"])
 
 
 @pytest.mark.parametrize("text", ["44.5.3", "44 60 00", "44 30 75", "O 11.3"])

@@ -6,7 +6,7 @@
   Accessibility: the form (first script) works on its own, with keyboard and screen
   reader, even when the 3D view (second script, needs WebGL and internet) cannot load.
 -->
-<html lang="en">
+<html lang="it">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,100 +82,95 @@
 </style>
 </head>
 <body>
-<a class="skip" href="#controls">Skip to the settings</a>
+<a class="skip" href="#controls" data-t="skip"></a>
 <div id="app">
   <section id="view" aria-labelledby="viewTitle">
-    <h2 id="viewTitle" class="visually-hidden">3D view of the model</h2>
+    <h2 id="viewTitle" class="visually-hidden" data-t="view_title"></h2>
     <div id="canvasBox">
-      <p id="noView" hidden>The 3D view could not load (it needs WebGL and an internet connection).
-        Everything else on this page works without it.</p>
+      <p id="noView" hidden data-t="no_view"></p>
     </div>
-    <div id="viewControls" role="group" aria-label="Move the 3D view">
-      <button type="button" data-view="left">Rotate left</button>
-      <button type="button" data-view="right">Rotate right</button>
-      <button type="button" data-view="up">Tilt up</button>
-      <button type="button" data-view="down">Tilt down</button>
-      <button type="button" data-view="in">Zoom in</button>
-      <button type="button" data-view="out">Zoom out</button>
-      <button type="button" data-view="reset">Reset view</button>
+    <div id="viewControls" role="group" data-t-aria="move_view">
+      <button type="button" data-view="left" data-t="rotate_left"></button>
+      <button type="button" data-view="right" data-t="rotate_right"></button>
+      <button type="button" data-view="up" data-t="tilt_up"></button>
+      <button type="button" data-view="down" data-t="tilt_down"></button>
+      <button type="button" data-view="in" data-t="zoom_in"></button>
+      <button type="button" data-view="out" data-t="zoom_out"></button>
+      <button type="button" data-view="reset" data-t="reset_view"></button>
     </div>
-    <p id="hud" aria-hidden="true">Drag to rotate, right-drag to pan, wheel to zoom.</p>
+    <p id="hud" aria-hidden="true" data-t="hud"></p>
   </section>
 
   <main id="controls" tabindex="-1">
-    <h1>Model tuner</h1>
+    <h1 data-t="heading"></h1>
     <p class="sub" id="source"></p>
-    <p class="hint">For each layer choose whether the model shows it, its height in millimetres (positive raises it
-      above the base plate, negative cuts it into the plate), and its texture or symbol shape. Heights show at once
-      in the 3D view; switches, textures and shapes show after you build again. When you are done, download
-      settings.toml and run the build command shown under Save.</p>
+    <p class="hint" data-t="intro"></p>
 
-    <h2>Features</h2>
-    <div class="switches" role="group" aria-label="Features of the whole model">
-      <label><input type="checkbox" id="fTextures"> Textures on areas (off: every area is smooth, to texture it in the slicer)</label>
-      <label><input type="checkbox" id="fSymbols"> Standard symbols for trees, boulders and objects (off: as drawn on the map)</label>
+    <h2 data-t="features"></h2>
+    <div class="switches" role="group" data-t-aria="features_aria">
+      <label><input type="checkbox" id="fTextures"> <span data-t="f_textures"></span></label>
+      <label><input type="checkbox" id="fSymbols"> <span data-t="f_symbols"></span></label>
     </div>
 
-    <h2 id="baseTitle">Base plate</h2>
+    <h2 id="baseTitle" data-t="base_title"></h2>
     <div id="base"></div>
 
-    <h2>Ground</h2>
+    <h2 data-t="ground"></h2>
     <div id="terrain"></div>
 
-    <h2>Objects on the ground</h2>
+    <h2 data-t="objects"></h2>
     <div id="objects"></div>
 
-    <h2>Changes that need a new build</h2>
+    <h2 data-t="rebuild_title"></h2>
     <div id="rebuild" role="status" aria-live="polite"></div>
 
-    <h2>Height check</h2>
+    <h2 data-t="height_check"></h2>
     <div id="stepStatus" role="status" aria-live="polite"></div>
 
-    <h2>Model summary</h2>
+    <h2 data-t="summary_title"></h2>
     <table>
       <caption id="summaryCaption"></caption>
-      <thead><tr><th scope="col">Layer</th><th scope="col">Kind</th><th scope="col" class="num">Height</th>
-        <th scope="col">Texture or shape</th><th scope="col" class="num">Area (mm²)</th></tr></thead>
+      <thead><tr><th scope="col" data-t="col_layer"></th><th scope="col" data-t="col_kind"></th>
+        <th scope="col" class="num" data-t="col_height"></th><th scope="col" data-t="col_look"></th>
+        <th scope="col" class="num" data-t="col_area"></th></tr></thead>
       <tbody id="summary"></tbody>
     </table>
 
-    <h2>Tactile check of the last build</h2>
+    <h2 data-t="check_title"></h2>
     <ul id="checks"></ul>
 
-    <h2>Save</h2>
+    <h2 data-t="save_title"></h2>
     <div class="buttons">
-      <button type="button" class="primary" id="download">Download settings.toml</button>
-      <button type="button" id="copy">Copy settings</button>
-      <button type="button" id="reset">Reset to the values of the last build</button>
+      <button type="button" class="primary" id="download" data-t="download"></button>
+      <button type="button" id="copy" data-t="copy"></button>
+      <button type="button" id="reset" data-t="reset"></button>
     </div>
     <p id="saveStatus" role="status" aria-live="polite" class="hint"></p>
-    <p class="hint">Put settings.toml in the project folder, then run from there:</p>
+    <p class="hint" data-t="put_settings"></p>
     <pre id="cmd"></pre>
-    <details><summary>Show settings.toml</summary><pre id="toml"></pre></details>
+    <details><summary data-t="show_toml"></summary><pre id="toml"></pre></details>
 
-    <h2 id="tileTitle">Test tile</h2>
-    <p class="hint">Print a small piece first to feel the heights. Type the rectangle in millimetres from the
-      bottom-left corner of the map (not counting the margins with the title and north symbols), or use
-      "Pick on the 3D view" and click two corners.</p>
+    <h2 id="tileTitle" data-t="tile_title"></h2>
+    <p class="hint" data-t="tile_hint"></p>
     <form id="tileForm" class="tile" aria-labelledby="tileTitle">
-      <label for="tileX0">Left</label><input id="tileX0" type="number" step="0.5" min="0">
-      <label for="tileY0">Bottom</label><input id="tileY0" type="number" step="0.5" min="0">
-      <label for="tileX1">Right</label><input id="tileX1" type="number" step="0.5" min="0">
-      <label for="tileY1">Top</label><input id="tileY1" type="number" step="0.5" min="0">
+      <label for="tileX0" data-t="left"></label><input id="tileX0" type="number" step="0.5" min="0">
+      <label for="tileY0" data-t="bottom"></label><input id="tileY0" type="number" step="0.5" min="0">
+      <label for="tileX1" data-t="right"></label><input id="tileX1" type="number" step="0.5" min="0">
+      <label for="tileY1" data-t="top"></label><input id="tileY1" type="number" step="0.5" min="0">
     </form>
     <div class="buttons">
-      <button type="button" id="tileMake">Make tile command</button>
-      <button type="button" id="pick">Pick on the 3D view</button>
-      <button type="button" id="clearTile">Clear</button>
+      <button type="button" id="tileMake" data-t="tile_make"></button>
+      <button type="button" id="pick" data-t="tile_pick"></button>
+      <button type="button" id="clearTile" data-t="tile_clear"></button>
     </div>
     <p id="tileStatus" role="status" aria-live="polite" class="hint"></p>
-    <pre id="tileCmd">No tile yet.</pre>
+    <pre id="tileCmd" data-t="no_tile"></pre>
 
-    <h2>View options</h2>
+    <h2 data-t="view_options"></h2>
     <div class="fields">
-      <label for="exagNum">Vertical exaggeration (3D view only)</label>
+      <label for="exagNum" data-t="exaggeration"></label>
       <input id="exagNum" type="number" min="1" max="6" step="0.5" value="1">
-      <input id="exag" type="range" min="1" max="6" step="0.5" value="1" aria-label="Vertical exaggeration, slider">
+      <input id="exag" type="range" min="1" max="6" step="0.5" value="1" data-t-aria="exaggeration_aria">
     </div>
   </main>
 </div>
@@ -183,8 +178,14 @@
 <script>
 // ============================================================== form (no dependencies)
 const MODEL = /*__MODEL_DATA__*/null;
+// Texts in the page's language (locales/<lang>.toml, section [tuner]).
+const T = (key, values = {}) => (MODEL.text[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => values[k] ?? "");
+document.documentElement.lang = MODEL.lang;
+document.title = T("page_title");
+document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = T(el.dataset.t); });
+document.querySelectorAll("[data-t-aria]").forEach(el => el.setAttribute("aria-label", T(el.dataset.tAria)));
 const MIN_FLOOR = 0.4;          // a recess always leaves this much plate below it (as in model3d.py)
-const SHAPES = { as_drawn: "as drawn on the map", dot: "dot", ring: "ring", cross: "cross" };
+const SHAPES = { as_drawn: T("shape_as_drawn"), dot: T("shape_dot"), ring: T("shape_ring"), cross: T("shape_cross") };
 const $ = id => document.getElementById(id);
 const fmt = v => (Math.round(v * 10) / 10).toString();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -192,7 +193,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const CLASSES = MODEL.classes;
 const BY_NAME = Object.fromEntries(CLASSES.map(c => [c.class, c]));
 const TEXTURES = MODEL.layers.filter(l => l.role === "texture");
-const FIXED_ROLES = ["braille", "north", "frame", "edge", "pin", "scale_bar"];  // fixed size: not tuned here
+const FIXED_ROLES = ["braille", "north", "frame", "edge", "pin", "scale_bar", "qr", "qr_frame"];  // fixed size: not tuned here
 const FIXED = MODEL.layers.filter(l => FIXED_ROLES.includes(l.role));
 const TEXTURE_TEXT = Object.fromEntries(MODEL.texture_library.map(t => [t.name, t.text]));
 const initial = {
@@ -219,7 +220,7 @@ const isOn = name => state.classes[name].enabled;
 const textureOf = name => state.features.textures ? state.classes[name].texture : "none";
 const textureText = name => {
   const t = textureOf(name);
-  return t === "none" ? "smooth" : t === "custom" ? BY_NAME[name].texture_text : (TEXTURE_TEXT[t] || t);
+  return t === "none" ? T("smooth") : t === "custom" ? BY_NAME[name].texture_text : (TEXTURE_TEXT[t] || t);
 };
 const shapeOf = name => state.features.standard_symbols || !BY_NAME[name].point_symbol ? state.classes[name].shape : "as_drawn";
 
@@ -244,10 +245,19 @@ function viewState() {
 
 function feel(name) {
   const c = BY_NAME[name], h = state.classes[name].height;
-  if (c.role === "object") return `${fmt(h)} mm high`;
-  if (h < 0) return `recessed ${fmt(-h)} mm`;
-  if (h === 0) return "flat";
-  return `raised ${fmt(h)} mm`;
+  if (c.role === "object") return T("high", { h: fmt(h) });
+  if (h < 0) return T("recessed", { h: fmt(-h) });
+  if (h === 0) return T("flat");
+  return T("raised", { h: fmt(h) });
+}
+
+// The surface of an area: with heights that include the texture (output.heights_include_texture),
+// one texture thickness under the class height, as model3d.texture_levels makes it.
+const TEX_THICK = Object.fromEntries(TEXTURES.map(t => [t.on, t.height_mm - t.z0_mm]));
+function areaHeight(cls, v) {
+  const h = v.heights[cls], th = TEX_THICK[cls];
+  if (!MODEL.heights_include_texture || !th || v.hidden[cls + " texture"]) return h;
+  return h >= 0 ? Math.max(h - Math.min(th, h), 0) : h - th;
 }
 
 // ---------------------------------------------------------------- one labelled group per layer
@@ -255,16 +265,16 @@ const setters = {};
 function heightFields(key, label, value, min, max, onChange) {
   const id = "h-" + key.replace(/\W/g, "_");
   const html = `
-      <label for="${id}">Height in mm</label>
+      <label for="${id}">${T("height_mm")}</label>
       <input id="${id}" type="number" step="0.1" min="${min}" max="${max}" value="${value}" aria-describedby="${id}-meta">
       <input id="${id}-range" type="range" step="0.1" min="${min}" max="${max}" value="${value}"
-        aria-label="${esc(label)} height, slider" aria-describedby="${id}-meta">`;
+        aria-label="${esc(T("height_slider", { label }))}" aria-describedby="${id}-meta">`;
   const wire = fs => {
     const num = fs.querySelector(`#${id}`), rng = fs.querySelector(`#${id}-range`);
     const set = (v, quiet) => {
       v = Math.min(max, Math.max(min, Math.round(Number(v) * 10) / 10));
       if (Number.isNaN(v)) return;
-      num.value = v; rng.value = v; rng.setAttribute("aria-valuetext", `${fmt(v)} millimetres`);
+      num.value = v; rng.value = v; rng.setAttribute("aria-valuetext", T("millimetres", { v: fmt(v) }));
       onChange(v, quiet);
     };
     num.addEventListener("change", () => set(num.value));
@@ -277,9 +287,9 @@ function heightFields(key, label, value, min, max, onChange) {
 function baseRow() {
   const fs = document.createElement("fieldset");
   fs.className = "layer";
-  const hf = heightFields("__base", "Base plate", state.base, 0.6, 6, (v, quiet) => { state.base = v; changed(quiet); });
-  fs.innerHTML = `<legend>Base plate</legend><div class="fields">${hf.html}
-    <span class="meta" id="${hf.id}-meta">Thickness of the plate everything stands on.</span></div>`;
+  const hf = heightFields("__base", T("base_title"), state.base, 0.6, 6, (v, quiet) => { state.base = v; changed(quiet); });
+  fs.innerHTML = `<legend>${T("base_title")}</legend><div class="fields">${hf.html}
+    <span class="meta" id="${hf.id}-meta">${T("base_meta")}</span></div>`;
   $("base").appendChild(fs);
   setters.__base = hf.wire(fs);
   setters.__base(state.base, true);
@@ -291,28 +301,28 @@ function classRow(c) {
   fs.className = "layer";
   const hf = heightFields(c.class, c.label, state.classes[c.class].height, c.role === "object" ? 0 : -2, 6,
     (v, quiet) => { state.classes[c.class].height = v; changed(quiet); });
-  const offNote = c.role === "object" ? "Off: not on the model."
-    : c.merge_into ? `Off: its area becomes ${esc(c.merge_label)}.` : "Off: what is under it on the map shows instead.";
+  const offNote = c.role === "object" ? T("off_object")
+    : c.merge_into ? esc(T("off_merge", { label: c.merge_label })) : T("off_under");
   let extra = "";
   if (c.role === "terrain") {
-    const opts = [["none", "none (smooth)"], ...MODEL.texture_library.map(t => [t.name, `${t.name}: ${t.text}`])];
-    if (c.texture === "custom") opts.push(["custom", `as in the config: ${c.texture_text}`]);
-    extra = `<label for="tx-${key}">Texture</label>
+    const opts = [["none", T("none_smooth")], ...MODEL.texture_library.map(t => [t.name, `${t.name}: ${t.text}`])];
+    if (c.texture === "custom") opts.push(["custom", T("as_config", { text: c.texture_text })]);
+    extra = `<label for="tx-${key}">${T("texture")}</label>
       <select id="tx-${key}">${opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join("")}</select>`;
   } else {
-    extra = `<label for="sh-${key}">Shape</label>
+    extra = `<label for="sh-${key}">${T("shape")}</label>
       <select id="sh-${key}">${Object.entries(SHAPES).map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
   }
-  const meta = (c.role === "object" ? `Object, at least ${fmt(c.min_width_mm)} mm wide.` : "Ground.")
-    + (c.on_model ? ` Covers ${fmt(c.area_mm2)} mm².` : " Not on the current model.") + " " + offNote;
+  const meta = (c.role === "object" ? T("meta_object", { w: fmt(c.min_width_mm) }) : T("meta_ground"))
+    + (c.on_model ? T("meta_covers", { a: fmt(c.area_mm2) }) : T("meta_not_on")) + " " + offNote;
   fs.innerHTML = `
     <legend><span class="sw" style="background:${c.colour}" aria-hidden="true"></span>${esc(c.label)}</legend>
     <div class="fields">
-      <label class="wide"><input type="checkbox" id="on-${key}"> Show ${esc(c.label)} on the model</label>
+      <label class="wide"><input type="checkbox" id="on-${key}"> ${esc(T("show_on_model", { label: c.label }))}</label>
       ${hf.html}
       ${extra}
       <span class="meta" id="${hf.id}-meta">${meta}</span>
-      ${c.on_model ? `<label class="wide"><input type="checkbox" id="vis-${key}" checked> Show in the 3D view</label>` : ""}
+      ${c.on_model ? `<label class="wide"><input type="checkbox" id="vis-${key}" checked> ${T("show_in_view")}</label>` : ""}
     </div>`;
   $(c.role === "object" ? "objects" : "terrain").appendChild(fs);
   setters[c.class] = hf.wire(fs);
@@ -332,8 +342,8 @@ function classRow(c) {
 
 const rows = {};
 function buildForm() {
-  $("source").textContent = `${MODEL.pdf} · plate ${fmt(MODEL.width_mm)} × ${fmt(MODEL.height_mm)} mm · settings from ${MODEL.config}`
-    + (MODEL.title ? ` · Braille title "${MODEL.title}"` : "");
+  $("source").textContent = T("source", { pdf: MODEL.pdf, w: fmt(MODEL.width_mm), h: fmt(MODEL.height_mm), config: MODEL.config })
+    + (MODEL.title ? T("source_title", { title: MODEL.title }) : "");
   for (const [id, k] of [["fTextures", "textures"], ["fSymbols", "standard_symbols"]]) {
     $(id).checked = state.features[k];
     $(id).addEventListener("change", e => { state.features[k] = e.target.checked; changed(); });
@@ -345,7 +355,7 @@ function buildForm() {
   for (const line of MODEL.check_lines) {
     const li = document.createElement("li"); li.textContent = line.replace(/^\s*-\s*/, ""); checks.appendChild(li);
   }
-  if (MODEL.check_ok) { const li = document.createElement("li"); li.className = "ok"; li.textContent = "All checks passed."; checks.prepend(li); }
+  if (MODEL.check_ok) { const li = document.createElement("li"); li.className = "ok"; li.textContent = T("all_passed"); checks.prepend(li); }
 }
 
 // ---------------------------------------------------------------- outputs that follow the values
@@ -353,7 +363,8 @@ function totalHeight() {
   const v = viewState();
   let top = 0;
   for (const c of CLASSES) if (isOn(c.class)) top = Math.max(top, v.heights[c.class]);
-  for (const t of TEXTURES) if (!v.hidden[t.class]) top = Math.max(top, Math.max(v.heights[t.on], 0) + (t.height_mm - t.z0_mm));
+  for (const t of TEXTURES) if (!v.hidden[t.class])
+    top = Math.max(top, MODEL.heights_include_texture ? v.heights[t.on] : Math.max(v.heights[t.on], 0) + (t.height_mm - t.z0_mm));
   for (const f of FIXED) top = Math.max(top, f.height_mm);
   return state.base + top;
 }
@@ -365,8 +376,8 @@ function summary() {
   for (const c of shown.sort((a, b) => state.classes[a.class].height - state.classes[b.class].height)) {
     const tr = document.createElement("tr");
     const look = c.role === "object" ? SHAPES[shapeOf(c.class)] : textureText(c.class);
-    const cells = [c.label, c.role === "object" ? "object" : "ground", feel(c.class), look,
-      c.on_model ? fmt(c.area_mm2) : "after a new build"];
+    const cells = [c.label, c.role === "object" ? T("kind_object") : T("kind_ground"), feel(c.class), look,
+      c.on_model ? fmt(c.area_mm2) : T("after_build")];
     cells.forEach((v, i) => {
       const td = document.createElement(i === 0 ? "th" : "td");
       if (i === 0) td.scope = "row";
@@ -375,7 +386,7 @@ function summary() {
     });
     body.appendChild(tr);
   }
-  $("summaryCaption").textContent = `Base plate ${fmt(state.base)} mm. Highest point about ${fmt(totalHeight())} mm above the table.`;
+  $("summaryCaption").textContent = T("caption", { base: fmt(state.base), top: fmt(totalHeight()) });
 }
 
 function stepProblems() {
@@ -387,20 +398,20 @@ function stepProblems() {
     const a = ground[i].class, b = ground[j].class;
     const d = Math.abs(state.classes[a].height - state.classes[b].height);
     if (d < MODEL.min_step_mm && textureText(a) === textureText(b))
-      out.push(`${BY_NAME[a].label} and ${BY_NAME[b].label} (${fmt(d)} mm apart, ${textureText(a)})`);
+      out.push(T("step_item", { a: BY_NAME[a].label, b: BY_NAME[b].label, d: fmt(d), texture: textureText(a) }));
   }
   return out;
 }
 
 function rebuildList() {
   const out = [];
-  for (const [k, text] of [["textures", "textures"], ["standard_symbols", "standard symbols"]])
-    if (state.features[k] !== initial.features[k]) out.push(`${text} ${state.features[k] ? "on" : "off"}`);
+  for (const [k, text] of [["textures", T("feature_textures")], ["standard_symbols", T("feature_symbols")]])
+    if (state.features[k] !== initial.features[k]) out.push(`${text} ${state.features[k] ? T("on") : T("off")}`);
   for (const c of CLASSES) {
     const s = state.classes[c.class], i = initial.classes[c.class];
-    if (s.enabled !== i.enabled && (c.role === "terrain" || !c.on_model)) out.push(`${c.label} ${s.enabled ? "on" : "off"}`);
-    if (s.texture !== i.texture) out.push(`${c.label} texture: ${s.texture}`);
-    if (s.shape !== i.shape) out.push(`${c.label} shape: ${SHAPES[s.shape]}`);
+    if (s.enabled !== i.enabled && (c.role === "terrain" || !c.on_model)) out.push(`${c.label} ${s.enabled ? T("on") : T("off")}`);
+    if (s.texture !== i.texture) out.push(T("change_texture", { label: c.label, value: s.texture }));
+    if (s.shape !== i.shape) out.push(T("change_shape", { label: c.label, value: SHAPES[s.shape] }));
   }
   return out;
 }
@@ -414,20 +425,20 @@ function changed(quiet) {
   view("apply", viewState());
   const r = rebuildList();
   $("rebuild").innerHTML = r.length
-    ? `<p class="warn">The 3D view cannot show these yet; build again to see them: ${esc(r.join("; "))}.</p>`
-    : `<p class="hint">None. Heights, and objects switched off, show in the 3D view at once.</p>`;
+    ? `<p class="warn">${esc(T("rebuild_warn", { list: r.join("; ") }))}</p>`
+    : `<p class="hint">${T("rebuild_none")}</p>`;
   clearTimeout(announceTimer);
   // Wait until the user stops changing values, so the screen reader is not flooded.
   announceTimer = setTimeout(() => {
     const p = stepProblems();
     $("stepStatus").innerHTML = p.length
-      ? `<p class="warn">Ground layers that may feel the same (height difference under ${MODEL.min_step_mm} mm and the same texture): ${esc(p.join("; "))}.</p>`
-      : `<p class="ok">Every ground layer differs from the others by at least ${MODEL.min_step_mm} mm or by texture.</p>`;
+      ? `<p class="warn">${esc(T("step_warn", { mm: MODEL.min_step_mm, list: p.join("; ") }))}</p>`
+      : `<p class="ok">${T("step_ok", { mm: MODEL.min_step_mm })}</p>`;
   }, quiet ? 0 : 700);
 }
 
 function toml() {
-  const lines = ["# Settings chosen in tuner.html for " + MODEL.pdf, "# Apply with: " + MODEL.command, "",
+  const lines = [T("toml_header", { pdf: MODEL.pdf }), T("toml_apply", { command: MODEL.command }), "",
     "[output]", `base_mm = ${state.base}`, "", "[features]",
     `textures = ${state.features.textures}`, `standard_symbols = ${state.features.standard_symbols}`];
   for (const c of CLASSES) {
@@ -444,11 +455,11 @@ $("download").addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([toml()], { type: "text/plain" }));
   a.download = "settings.toml"; a.click(); URL.revokeObjectURL(a.href);
-  $("saveStatus").textContent = "settings.toml downloaded.";
+  $("saveStatus").textContent = T("downloaded");
 });
 $("copy").addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(toml()); $("saveStatus").textContent = "Settings copied to the clipboard."; }
-  catch (e) { $("saveStatus").textContent = "Copy failed; open Show settings.toml and copy the text from there."; }
+  try { await navigator.clipboard.writeText(toml()); $("saveStatus").textContent = T("copied"); }
+  catch (e) { $("saveStatus").textContent = T("copy_failed"); }
 });
 $("reset").addEventListener("click", () => {
   state = structuredClone(initial);
@@ -461,7 +472,7 @@ $("reset").addEventListener("click", () => {
     rows[c.class].sel.value = initial.classes[c.class][c.role === "terrain" ? "texture" : "shape"];
   }
   changed(true);
-  $("saveStatus").textContent = "All values reset to those of the last build.";
+  $("saveStatus").textContent = T("reset_done");
 });
 
 // ---------------------------------------------------------------- test tile
@@ -471,31 +482,31 @@ for (const id of ["tileY0", "tileY1"]) $(id).max = fmt(mapH);
 function makeTile() {
   const v = ["tileX0", "tileY0", "tileX1", "tileY1"].map(id => Number($(id).value));
   if (v.some(Number.isNaN) || $("tileX0").value === "" || $("tileY1").value === "") {
-    $("tileStatus").textContent = "Fill in all four values first."; return;
+    $("tileStatus").textContent = T("fill_all"); return;
   }
   const [x0, x1] = [v[0], v[2]].sort((a, b) => a - b), [y0, y1] = [v[1], v[3]].sort((a, b) => a - b);
   const c = [Math.max(0, x0), Math.max(0, y0), Math.min(mapW, x1), Math.min(mapH, y1)];
-  if (c[2] - c[0] < 5 || c[3] - c[1] < 5) { $("tileStatus").textContent = "The tile must be at least 5 by 5 mm."; return; }
+  if (c[2] - c[0] < 5 || c[3] - c[1] < 5) { $("tileStatus").textContent = T("tile_min"); return; }
   const base = MODEL.command.replace(/ -o \S+$|-o "[^"]*"$/, "").trim();
   $("tileCmd").textContent = `${base} --region ${c.map(fmt).join(",")} -o outputs\\tile`;
-  $("tileStatus").textContent = `Tile of ${fmt(c[2] - c[0])} by ${fmt(c[3] - c[1])} mm. The command is below.`;
+  $("tileStatus").textContent = T("tile_made", { w: fmt(c[2] - c[0]), h: fmt(c[3] - c[1]) });
   view("showTile", c);
 }
 $("tileMake").addEventListener("click", makeTile);
 $("tileForm").addEventListener("submit", e => { e.preventDefault(); makeTile(); });
 $("clearTile").addEventListener("click", () => {
   for (const id of ["tileX0", "tileY0", "tileX1", "tileY1"]) $(id).value = "";
-  $("tileCmd").textContent = "No tile yet."; $("tileStatus").textContent = "Tile cleared."; view("showTile", null);
+  $("tileCmd").textContent = T("no_tile"); $("tileStatus").textContent = T("tile_cleared"); view("showTile", null);
 });
 let corners = [];
 window.tilePicking = false;
 $("pick").addEventListener("click", () => {
   window.tilePicking = true; corners = [];
-  $("tileStatus").textContent = window.view3d ? "Click the first corner on the 3D view." : "The 3D view is not available; type the values instead.";
+  $("tileStatus").textContent = window.view3d ? T("first_corner") : T("no_3d");
 });
 window.onTileCorner = (x, y) => {          // called by the 3D view, in map mm
   corners.push([x, y]);
-  if (corners.length < 2) { $("tileStatus").textContent = "Click the opposite corner."; return; }
+  if (corners.length < 2) { $("tileStatus").textContent = T("opposite_corner"); return; }
   window.tilePicking = false;
   $("tileX0").value = fmt(Math.min(corners[0][0], corners[1][0])); $("tileX1").value = fmt(Math.max(corners[0][0], corners[1][0]));
   $("tileY0").value = fmt(Math.min(corners[0][1], corners[1][1])); $("tileY1").value = fmt(Math.max(corners[0][1], corners[1][1]));
@@ -596,12 +607,14 @@ function apply(v) {                        // v = { base, heights: {class: mm}, 
     }
     if (l.role === "texture") {
       // On top of its class; on the floor of a recessed class (water waves).
-      const h = v.heights[l.on];
-      const z = h >= 0 ? h : -Math.min(-h, base - MIN_FLOOR);
-      m.position.z = (base + z) * exag; m.scale.z = (l.height_mm - l.z0_mm) * exag;
+      const a = areaHeight(l.on, v);
+      const z = a >= 0 ? a : -Math.min(-a, base - MIN_FLOOR);
+      const thick = MODEL.heights_include_texture && v.heights[l.on] >= 0
+        ? Math.min(l.height_mm - l.z0_mm, v.heights[l.on]) : l.height_mm - l.z0_mm;
+      m.position.z = (base + z) * exag; m.scale.z = Math.max(thick, 0.001) * exag;
       continue;
     }
-    const h = v.heights[l.class];
+    const h = areaHeight(l.class, v);
     if (h >= 0) { m.position.z = base * exag; m.scale.z = Math.max(h, 0.02) * exag; }
     else { const d = Math.min(-h, base - MIN_FLOOR); m.position.z = 0; m.scale.z = (base - d) * exag; }
   }
@@ -646,7 +659,7 @@ function modelPoint(ev) {
 const toMap = p => [Math.max(0, Math.min(MODEL.map_box[2], p.x)), Math.max(0, Math.min(MODEL.map_box[3] - MODEL.map_box[1], p.y - MODEL.map_box[1]))];
 renderer.domElement.addEventListener("pointermove", ev => {
   const p = modelPoint(ev);
-  if (p) { const [x, y] = toMap(p); document.getElementById("hud").textContent = `Map position x ${x.toFixed(1)} mm, y ${y.toFixed(1)} mm`; }
+  if (p) { const [x, y] = toMap(p); document.getElementById("hud").textContent = T("hud_position", { x: x.toFixed(1), y: y.toFixed(1) }); }
 });
 renderer.domElement.addEventListener("click", ev => {
   if (!window.tilePicking) return;

@@ -133,39 +133,34 @@ def suggest_size(m: MapModel, cfg: Config) -> SizeSuggestion:
 
 def describe_size(sg: SizeSuggestion, cfg: Config, used_width_mm: float, source: str) -> list[str]:
     """The size decision in words, for the description and the command line."""
+    from .i18n import num, t
+
     s, r = cfg.size, cfg.tactile
-    scale = f", scale 1:{sg.tactile_scale:.0f}" if sg.tactile_scale else ""
-    size = (f"Suggested size: map {sg.width_mm:.0f} by {sg.height_mm:.0f} mm{scale} "
-            f"(plate about {sg.width_mm:.0f} by {sg.plate_height_mm:.0f} mm with the title and north symbols).")
-    wide = (f"passages at least {r.min_gap_mm:g} mm wide and raised parts at least {r.min_feature_mm:g} mm "
-            f"(tactile.min_gap_mm, tactile.min_feature_mm)")
+    scale = t("size.scale", scale=f"{sg.tactile_scale:.0f}") if sg.tactile_scale else ""
+    size = t("size.suggested", w=num(sg.width_mm, ".0f"), h=num(sg.height_mm, ".0f"), scale=scale,
+             plate_h=num(sg.plate_height_mm, ".0f"))
+    wide = t("size.wide", gap=num(r.min_gap_mm), feature=num(r.min_feature_mm))
     lines = [size]
+    ok, share = num(100 * sg.share_ok, ".0f"), num(100 * s.detail_share, ".0f")
     if sg.limited == "max":
         k = sg.needed_enlarge
-        need_scale = f", scale 1:{cfg.map_scale / k:.0f}" if cfg.map_scale else ""
-        lines.append(f"This is the largest size allowed ({s.max_mm:g} mm, size.max_mm). For "
-                     f"{100 * s.detail_share:.0f} % of the details to be readable the map would need "
-                     f"{sg.width_mm / sg.enlarge * k:.0f} by {sg.height_mm / sg.enlarge * k:.0f} mm{need_scale}; at "
-                     f"this size {100 * sg.share_ok:.0f} % of the {sg.measures} details measured have {wide}. "
-                     "Convert a smaller part (--crop) to keep more.")
+        need_scale = t("size.scale", scale=f"{cfg.map_scale / k:.0f}") if cfg.map_scale else ""
+        lines.append(t("size.largest", max=num(s.max_mm), share=share, w=num(sg.width_mm / sg.enlarge * k, ".0f"),
+                       h=num(sg.height_mm / sg.enlarge * k, ".0f"), scale=need_scale, ok=ok, n=sg.measures, wide=wide))
     elif sg.limited == "min":
-        lines.append(f"This is the smallest size allowed ({s.min_mm:g} mm, size.min_mm); {100 * sg.share_ok:.0f} % "
-                     f"of the {sg.measures} details measured have {wide}.")
+        lines.append(t("size.smallest", min=num(s.min_mm), ok=ok, n=sg.measures, wide=wide))
     else:
-        lines.append(f"At this size {100 * sg.share_ok:.0f} % of the {sg.measures} details measured on the map have "
-                     f"{wide}; the suggestion aims at {100 * s.detail_share:.0f} % (size.detail_share). "
-                     "Generalisation adjusts the rest, and the tactile check reports what remains.")
+        lines.append(t("size.readable", ok=ok, n=sg.measures, wide=wide, share=share))
     if cfg.map_scale:
-        lines.append(f"The map is 1:{cfg.map_scale:g}; the guidebook recommends tactile maps at 1:500 to 1:1000.")
+        lines.append(t("size.map_scale", scale=f"{cfg.map_scale:g}"))
     if source:
-        used = "the suggested size" if source == "suggested" else f"a map {used_width_mm:.0f} mm wide ({source})"
-        lines.append(f"Built at {used}.")
+        lines.append(t("size.built_suggested") if source == "suggested"
+                     else t("size.built_at", w=num(used_width_mm, ".0f"), source=source))
     plate_h = used_width_mm / sg.width_mm * sg.height_mm + (sg.plate_height_mm - sg.height_mm)
     if max(used_width_mm, plate_h) > s.bed_mm:
         page_w = sg.width_mm / sg.enlarge
         bed_w = page_w * sg.bed_enlarge
         option = f"--scale {cfg.map_scale / sg.bed_enlarge:.0f}" if cfg.map_scale else f"--width {math.floor(bed_w)}"
-        lines.append(f"The plate is larger than a {s.bed_mm:g} mm printer bed (size.bed_mm). To print it in one "
-                     f"piece, build with {option}: map {bed_w:.0f} mm wide, {100 * sg.bed_share:.0f} % of the details "
-                     "readable. Or print it in tiles (--region), or on a larger printer.")
+        lines.append(t("size.bed", bed=num(s.bed_mm), option=option, w=num(bed_w, ".0f"),
+                       share=num(100 * sg.bed_share, ".0f")))
     return lines
