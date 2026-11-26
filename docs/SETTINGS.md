@@ -296,7 +296,8 @@ build prints a warning, so check those rows.
 |---|---|---|
 | `size_scale` | `"auto"` | sizes in the rules (line widths, extents, dot screens) are multiplied by this. `"auto"` measures it on the dot screens of the map (402...): their dots and spacing must both differ by the same factor; within 10 % of 1 it stays 1 |
 | `colour_match_de` | `10.0` | a colour that no rule matches takes the nearest rule colour, if within this perceptual distance (CIE delta E; 2 is just visible). `0` = off |
-| `colour_margin_de` | `3.0` | ...but only if every other rule colour is at least this much farther; otherwise the symbol stays unrecognised (two rule greys can be close) |
+| `colour_margin_de` | `3.0` | ...but only if every other rule colour that means something else is at least this much farther; otherwise the symbol stays unrecognised (two rule greys can be close). Close colours of the same class (two shades of paved) do not block the guess |
+| `lone_dash_class` | `"footpath"` | a cross (a class with `shape = "cross"`) is two short strokes crossing in an X. A stroke its rule matched that no other stroke crosses is a dash of a dashed line (a small path, a fence tick), and gets this class instead; maps with other line widths fool rules that go by width alone |
 
 ### `[validate]`: warnings from the comparison with the PDF
 
@@ -346,4 +347,10 @@ colours (see the README, step 3). Two decisions in the rules are worth knowing:
 
 - paper with nothing printed on it counts as **forest** (white is forest in ISOM);
 - the first rule that matches wins, so the order of the black rules matters
-  (crosses, then footpath dashes, dotted lines, walls, outlines).
+  (crosses, then footpath dashes, dotted lines, walls, outlines);
+- some maps draw the north lines in the same blue as water. A rule with
+  `vertical = true` matches only lines that are straight and within 3 degrees of the
+  page's vertical (maps are printed with north up), so the default rules tell a north
+  line (long, thin, straight, upright) from a stream or a canal;
+- white shapes painted after the whole map, when a course overprint is drawn on top
+  of it, are halos of the overprint (around control numbers), not white forest.

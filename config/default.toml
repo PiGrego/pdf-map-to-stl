@@ -128,6 +128,7 @@ min_symbol_area_mm2 = 9.0 # isolated areas smaller than this are hard to identif
 size_scale = "auto"       # sizes in the rules times this; "auto" = measured on the dot screens
 colour_match_de = 10.0    # an unknown colour takes the nearest rule colour within this distance (2 = just visible); 0 = off
 colour_margin_de = 3.0    # ...only if every other rule colour is at least this much farther
+lone_dash_class = "footpath"  # crosses are two strokes in an X: a lone short stroke (a path dash) gets this class
 
 # ---------------------------------------------------------------- comparison with the PDF
 # After a build, the class map is compared with the PDF as rendered (validate.py). These
@@ -307,10 +308,21 @@ role = "ignore"
 # ---------------------------------------------------------------- symbol rules
 # kind: "fill" | "stroke" | "dots" | "any". rgb matched within rgb_tol (default 3).
 # Optional: min_width_mm / max_width_mm (strokes), min_extent_mm / max_extent_mm
-# (bbox of the source path), dot_mm / pitch_mm (dot screens, matched within 15 %).
+# (bbox of the source path), dot_mm / pitch_mm (dot screens, matched within 15 %),
+# vertical = true (only straight lines within 3 degrees of the page's vertical: north lines).
 # The isom field records which map symbol a rule stands for ("?" = to be checked).
 
 # -- open land (yellow family)
+[[symbol]]
+class = "open_land"
+isom = "403 rough open land (half-strength yellow)"
+kind = "fill"
+rgb = [255, 209, 131]
+[[symbol]]
+class = "open_land"
+isom = "402 / 404 open land with scattered trees (white dots on yellow)"
+kind = "dots"
+rgb = [255, 255, 255]
 [[symbol]]
 class = "open_land"
 isom = "402 open land with scattered trees"
@@ -408,6 +420,11 @@ isom = "501 paved area, variant?"
 kind = "any"
 rgb = [236, 191, 147]
 [[symbol]]
+class = "paved"
+isom = "501 paved area, a third shade (other club maps)"
+kind = "any"
+rgb = [241, 205, 171]
+[[symbol]]
 class = "canopy"
 isom = "522 canopy"
 kind = "any"
@@ -419,6 +436,14 @@ class = "building"
 isom = "521 building"
 kind = "any"
 rgb = [138, 140, 142]
+[[symbol]]
+class = "north_line"
+isom = "601 magnetic north line, in the water's blue: straight, upright and long"
+kind = "stroke"
+rgb = [0, 157, 221]
+max_width_mm = 0.3
+min_extent_mm = 40
+vertical = true
 [[symbol]]
 class = "water"
 isom = "3xx water"
@@ -483,8 +508,19 @@ isom = "7xx course overprint"
 kind = "any"
 rgb = [180, 29, 142]
 [[symbol]]
+class = "course"
+isom = "7xx course overprint (standard purple)"
+kind = "any"
+rgb = [236, 0, 140]
+[[symbol]]
 class = "north_line"
 isom = "601 magnetic north line"
+kind = "stroke"
+rgb = [63, 176, 228]
+max_width_mm = 0.3
+[[symbol]]
+class = "water"
+isom = "3xx water in a lighter blue (lakes on some maps; thin lines of this blue are north lines)"
 kind = "any"
 rgb = [63, 176, 228]
 [[symbol]]

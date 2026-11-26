@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import combinations
 
 import numpy as np
-from shapely.geometry import Polygon
+from shapely import STRtree
+from shapely.geometry import MultiLineString, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -56,7 +58,62 @@ def classify(scene: Scene, cfg: Config) -> list[Classified]:
         source, isom = cfg.classify(p)
         shown = cfg.shown_as(source)
         out.append(Classified(p, shown or source, isom, cfg.role(shown) if shown else "ignore", source))
+    return _lone_dashes(_course_halos(out, cfg), cfg)
+
+
+def _lone_dashes(items: list[Classified], cfg: Config) -> list[Classified]:
+    """A class drawn as a cross (``shape = "cross"``) is two short strokes crossing in an X.
+    A stroke its rule matched that is not an X by itself and that no other such stroke
+    crosses is a dash of a dashed line (a small path, a fence tick), as rules that go by
+    width alone cannot tell on maps with other line widths: it takes the class
+    ``recognition.lone_dash_class``."""
+    target = cfg.recognition.lone_dash_class
+    if target not in cfg.classes:
+        raise ValueError(f"recognition.lone_dash_class names an undefined class: {target!r}")
+    cand = [i for i, c in enumerate(items) if c.prim.kind == "stroke" and c.prim.lines
+            and c.source in cfg.classes and cfg.classes[c.source].shape == "cross"]
+    if not cand:
+        return items
+    shapes = [MultiLineString([list(ln.coords) for ln in items[i].prim.lines]) for i in cand]
+    tree = STRtree(shapes)
+    shown = cfg.shown_as(target)
+    out = list(items)
+    for k, i in enumerate(cand):
+        own = items[i].prim.lines
+        if any(a.intersects(b) for a, b in combinations(own, 2)):
+            continue  # an X drawn as one path
+        if any(j != k for j in tree.query(shapes[k], predicate="intersects")):
+            continue  # the other stroke of its X
+        c = items[i]
+        out[i] = Classified(c.prim, shown or target, f"{c.isom}: no stroke crosses it, so a dash of a line",
+                            cfg.role(shown) if shown else "ignore", target)
     return out
+
+
+WHITE = (255, 255, 255)
+HALO_COVER = 0.1  # a halo is at least this much under a course symbol
+
+
+def _course_halos(items: list[Classified], cfg: Config) -> list[Classified]:
+    """White shapes painted after the whole map, under a course overprint that covers them
+    in part, are halos of the overprint (around control numbers and lines), not white
+    forest. Map programs draw the course on top of the map; a white area that some maps
+    paint late, with no course symbol on it, stays what it is."""
+    course = [c for c in items if c.source == "course"]
+    others = [c.prim.seqno for c in items if c.source != "course" and c.prim.rgb != WHITE]
+    if not course or not others or min(c.prim.seqno for c in course) < max(others):
+        return items
+    last_map = max(others)
+    overprint = unary_union([c.prim.geom for c in course])
+    shown = cfg.shown_as("course")
+
+    def halo(c: Classified) -> bool:
+        g = c.prim.geom
+        return (c.prim.rgb == WHITE and c.prim.seqno > last_map and g.area > 0
+                and g.intersection(overprint).area >= HALO_COVER * g.area)
+
+    return [Classified(c.prim, shown or "course", "white halo of the course overprint (painted after the map)",
+                       cfg.role(shown) if shown else "ignore", "course") if halo(c) else c for c in items]
 
 
 def visible_terrain(items: list[Classified], page: BaseGeometry, background: str) -> dict[str, BaseGeometry]:

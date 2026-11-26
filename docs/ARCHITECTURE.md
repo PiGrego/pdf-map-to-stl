@@ -25,6 +25,7 @@ and a tactile legend, and checks what is still too fine. Pixels are used only to
    │  scene.py      every paint operation → polygon, cut by its clip paths and the window
    │                (a rectangle, a polygon or a fixed-size plate chosen in pick.html);
    │                dot-grid patterns (ISOM 402…) → one area = their clip outline
+   │                (rows of dots in a larger clip: each dot on its own)
    ▼
  primitives (ordered)
    │  config.py     rules in config/*.toml → class (open_land, building, wall, …) + role;
